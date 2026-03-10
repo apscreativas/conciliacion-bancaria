@@ -11,6 +11,7 @@ class BankFormat extends Model
 
     protected $fillable = [
         'team_id',
+        'banco_id',
         'name',
         'start_row',
         'date_column',
@@ -26,5 +27,10 @@ class BankFormat extends Model
     public function team()
     {
         return $this->belongsTo(Team::class);
+    }
+
+    public function banco()
+    {
+        return $this->belongsTo(Banco::class);
     }
 }

@@ -140,20 +140,10 @@ class FileUploadController extends Controller
 
                     if ($format) {
                         $bankFormatId = $format->id;
-
-                        // 2. Heuristic: Find Banco by Name (e.g. "BBVA Excel" -> matches "BBVA")
-                        // This is imperfect but bridges the gap since BankFormat is not linked to Banco in DB.
-                        $banco = Banco::where('nombre', 'LIKE', '%'.$format->name.'%')
-                            ->orWhere('nombre', 'LIKE', '%'.explode(' ', $format->name)[0].'%')
-                            ->first();
-
-                        if ($banco) {
-                            $bancoId = $banco->id;
-                        }
+                        $bancoId = $format->banco_id;
                     }
 
-                    // 3. If we couldn't resolve a Bank via Format, fail explicitly.
-                    // Silently assigning a wrong bank corrupts data, so we reject the upload instead.
+                    // 2. If format has no banco linked, fail explicitly.
                     if (! $bancoId) {
                         throw new \Exception("No se pudo determinar el banco para el formato seleccionado (ID: {$bankCode}). Configure un banco en el formato bancario.");
                     }

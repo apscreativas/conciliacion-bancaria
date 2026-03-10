@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Banco;
 use App\Models\BankFormat;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -21,7 +22,7 @@ class BankFormatController extends Controller
     // API endpoint for Dropdowns
     public function list()
     {
-        return BankFormat::orderBy('name')->get();
+        return BankFormat::with('banco:id,nombre')->orderBy('name')->get();
     }
 
     public function create()
@@ -61,8 +62,16 @@ class BankFormatController extends Controller
             'color' => 'nullable|string|max:20',
         ]);
 
+        $teamId = auth()->user()->current_team_id;
+
+        $banco = Banco::firstOrCreate(
+            ['nombre' => $request->name, 'team_id' => $teamId],
+            ['codigo' => \Illuminate\Support\Str::slug($request->name).'-t'.$teamId, 'estatus' => 'activo']
+        );
+
         $data = [
             'name' => $request->name,
+            'banco_id' => $banco->id,
             'color' => $request->color ?? $bankFormat->color,
         ];
 
@@ -142,8 +151,16 @@ class BankFormatController extends Controller
             'color' => 'nullable|string|max:20',
         ]);
 
+        $teamId = auth()->user()->current_team_id;
+
+        $banco = Banco::firstOrCreate(
+            ['nombre' => $request->name, 'team_id' => $teamId],
+            ['codigo' => \Illuminate\Support\Str::slug($request->name).'-t'.$teamId, 'estatus' => 'activo']
+        );
+
         $format = BankFormat::create([
-            'team_id' => auth()->user()->current_team_id,
+            'team_id' => $teamId,
+            'banco_id' => $banco->id,
             'name' => $request->name,
             'start_row' => $request->start_row,
             'date_column' => strtoupper($request->date_column),
