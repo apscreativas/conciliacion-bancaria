@@ -15,6 +15,8 @@ class Factura extends Model
         'team_id',
         'file_id_xml',
         'uuid',
+        'tipo_comprobante',
+        'metodo_pago',
         'monto',
         'fecha_emision',
         'rfc',

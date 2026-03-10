@@ -14,6 +14,8 @@ const props = defineProps<{
                 rfc: string;
                 nombre: string;
                 fecha_emision: string;
+                tipo_comprobante?: string;
+                metodo_pago?: string;
                 conciliaciones_count?: number;
             };
         }>;
@@ -30,6 +32,7 @@ const emit = defineEmits([
     "toggle-select",
     "toggle-all",
     "delete",
+    "view",
     "update-per-page",
 ]);
 
@@ -175,10 +178,10 @@ const formatCurrency = (amount: number) => {
                         </td>
                         <td class="py-4 px-6 text-right">
                             <button
-                                @click="emit('delete', file.id)"
-                                class="font-medium text-red-600 dark:text-red-500 hover:underline"
+                                @click="emit('view', file)"
+                                class="font-medium text-blue-600 dark:text-blue-400 hover:underline"
                             >
-                                {{ $t("Eliminar") }}
+                                {{ $t("Ver") }}
                             </button>
                         </td>
                     </tr>

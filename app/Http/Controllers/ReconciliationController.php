@@ -140,9 +140,9 @@ class ReconciliationController extends Controller
         }
 
         $count = 0;
+        $teamId = auth()->user()->current_team_id;
         foreach ($request->matches as $match) {
-            // Fetch movement to get the date
-            $movement = Movimiento::find($match['movement_id']);
+            $movement = Movimiento::where('team_id', $teamId)->find($match['movement_id']);
 
             $matcher->reconcile(
                 [$match['invoice_id']],
@@ -236,8 +236,10 @@ class ReconciliationController extends Controller
                 $q->where('facturas.nombre', 'like', "%{$search}%")
                     ->orWhere('facturas.rfc', 'like', "%{$search}%")
                     ->orWhere('movimientos.descripcion', 'like', "%{$search}%")
-                    ->orWhere('movimientos.referencia', 'like', "%{$search}%")
-                    ->orWhere('movimientos.monto', 'like', "%{$search}%");
+                    ->orWhere('movimientos.referencia', 'like', "%{$search}%");
+                if (is_numeric($search)) {
+                    $q->orWhere('movimientos.monto', (float) $search);
+                }
             });
         }
 
@@ -260,9 +262,11 @@ class ReconciliationController extends Controller
 
         $perPage = $request->input('per_page', 10);
         if ($perPage === 'all') {
-            $perPage = 999999;
-        } elseif (! in_array($perPage, [10, 25, 50])) {
+            $perPage = 200;
+        } elseif (! in_array((int) $perPage, [10, 25, 50])) {
             $perPage = 10;
+        } else {
+            $perPage = (int) $perPage;
         }
 
         $groupsPager = $query->orderBy('created_at', 'desc')
@@ -358,14 +362,20 @@ class ReconciliationController extends Controller
             default => 'fecha',
         };
 
+        // Validate month/year to prevent silent failures from invalid values
+        $validMonth = ($month && is_numeric($month) && (int) $month >= 1 && (int) $month <= 12) ? (int) $month : null;
+        $validYear = ($year && is_numeric($year) && (int) $year >= 2000 && (int) $year <= 2100) ? (int) $year : null;
+
         // Helper closures for search
-        $invoiceSearch = function ($query) use ($search, $dateFrom, $dateTo, $month, $year, $amountMin, $amountMax) {
+        $invoiceSearch = function ($query) use ($search, $dateFrom, $dateTo, $validMonth, $validYear, $amountMin, $amountMax) {
             if ($search) {
                 $query->where(function ($q) use ($search) {
                     $q->where('nombre', 'like', "%{$search}%")
                         ->orWhere('rfc', 'like', "%{$search}%")
-                        ->orWhere('uuid', 'like', "%{$search}%")
-                        ->orWhere('monto', 'like', "%{$search}%");
+                        ->orWhere('uuid', 'like', "%{$search}%");
+                    if (is_numeric($search)) {
+                        $q->orWhere('monto', (float) $search);
+                    }
                 });
             }
 
@@ -378,8 +388,12 @@ class ReconciliationController extends Controller
                     $query->whereDate('fecha_emision', '<=', $dateTo);
                 }
             } else {
-                $query->whereMonth('fecha_emision', $month)
-                    ->whereYear('fecha_emision', $year);
+                if ($validMonth) {
+                    $query->whereMonth('fecha_emision', $validMonth);
+                }
+                if ($validYear) {
+                    $query->whereYear('fecha_emision', $validYear);
+                }
             }
 
             // Amount Filters
@@ -391,12 +405,14 @@ class ReconciliationController extends Controller
             }
         };
 
-        $movementSearch = function ($query) use ($search, $dateFrom, $dateTo, $month, $year, $amountMin, $amountMax) {
+        $movementSearch = function ($query) use ($search, $dateFrom, $dateTo, $validMonth, $validYear, $amountMin, $amountMax) {
             if ($search) {
                 $query->where(function ($q) use ($search) {
                     $q->where('descripcion', 'like', "%{$search}%")
-                        ->orWhere('referencia', 'like', "%{$search}%")
-                        ->orWhere('monto', 'like', "%{$search}%");
+                        ->orWhere('referencia', 'like', "%{$search}%");
+                    if (is_numeric($search)) {
+                        $q->orWhere('monto', (float) $search);
+                    }
                 });
             }
 
@@ -409,8 +425,12 @@ class ReconciliationController extends Controller
                     $query->whereDate('fecha', '<=', $dateTo);
                 }
             } else {
-                $query->whereMonth('fecha', $month)
-                    ->whereYear('fecha', $year);
+                if ($validMonth) {
+                    $query->whereMonth('fecha', $validMonth);
+                }
+                if ($validYear) {
+                    $query->whereYear('fecha', $validYear);
+                }
             }
 
             // Amount Filters
@@ -439,11 +459,12 @@ class ReconciliationController extends Controller
             ->limit(50)
             ->get();
 
-        // Pending Items
+        // Pending Items (limited to prevent memory exhaustion)
         $pendingInvoices = Factura::where('team_id', $teamId)
             ->doesntHave('conciliaciones')
             ->where($invoiceSearch)
             ->orderBy($invoiceSortColumn, $invoiceDirection)
+            ->limit(200)
             ->get();
 
         $pendingMovements = Movimiento::where('team_id', $teamId)
@@ -455,6 +476,7 @@ class ReconciliationController extends Controller
             ->where($movementSearch)
             ->with(['archivo.bankFormat'])
             ->orderBy($movementSortColumn, $movementDirection)
+            ->limit(200)
             ->get();
 
         return Inertia::render('Reconciliation/Status', [
@@ -484,6 +506,16 @@ class ReconciliationController extends Controller
 
     public function export(Request $request)
     {
+        $request->validate([
+            'format' => 'nullable|in:xlsx,pdf',
+            'month' => 'nullable|integer|min:1|max:12',
+            'year' => 'nullable|integer|min:2000|max:2100',
+            'date_from' => 'nullable|date',
+            'date_to' => 'nullable|date',
+            'amount_min' => 'nullable|numeric|min:0',
+            'amount_max' => 'nullable|numeric|min:0',
+        ]);
+
         $teamId = auth()->user()->current_team_id;
         $userId = auth()->id();
 

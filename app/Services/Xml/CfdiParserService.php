@@ -7,6 +7,64 @@ use SimpleXMLElement;
 
 class CfdiParserService
 {
+    /**
+     * Extract payment amount and date from Complemento de Pago (pago20/pago10).
+     * A single complement can contain multiple <Pago> nodes; we sum their Monto.
+     *
+     * NOTE: If a complement has multiple <Pago> nodes with different amounts,
+     * they are summed into a single total. This may not match individual bank
+     * movements. A future improvement could create one factura per <Pago> node.
+     */
+    private function extractPaymentComplement(SimpleXMLElement $xml, array $ns): array
+    {
+        $totalMonto = 0.0;
+        $fechaPago = null;
+
+        // Try pago20 (CFDI 4.0) then pago10 (CFDI 3.3)
+        $pagoVersions = [
+            'pago20' => 'http://www.sat.gob.mx/Pagos20',
+            'pago10' => 'http://www.sat.gob.mx/Pagos',
+        ];
+
+        foreach ($pagoVersions as $prefix => $defaultUri) {
+            $uri = $ns[$prefix] ?? null;
+
+            if (! $uri) {
+                // Namespace not declared in XML, try the default URI with XPath
+                $xml->registerXPathNamespace($prefix, $defaultUri);
+                $pagos = $xml->xpath("//{$prefix}:Pago");
+
+                if (empty($pagos)) {
+                    continue;
+                }
+            } else {
+                $xml->registerXPathNamespace($prefix, $uri);
+                $pagos = $xml->xpath("//{$prefix}:Pago");
+
+                if (empty($pagos)) {
+                    continue;
+                }
+            }
+
+            foreach ($pagos as $pago) {
+                $totalMonto += (float) $pago['Monto'];
+
+                if (! $fechaPago) {
+                    $fechaPago = (string) $pago['FechaPago'];
+                }
+            }
+
+            break; // Found payments, no need to try older version
+        }
+
+        return [
+            'monto' => $totalMonto,
+            'fecha_pago' => $fechaPago
+                ? Carbon::parse($fechaPago)->format('Y-m-d')
+                : Carbon::now()->format('Y-m-d'),
+        ];
+    }
+
     public function parse(string $content): array
     {
         // Harden against XXE (libxml 2.9+ disables it by default, but explicit is better)
@@ -43,6 +101,21 @@ class CfdiParserService
         $fechaRaw = (string) $xml['Fecha'];
         $fecha = Carbon::parse($fechaRaw)->format('Y-m-d');
         $folio = (string) $xml['Folio'];
+        $tipoComprobante = (string) $xml['TipoDeComprobante']; // I=Ingreso, E=Egreso, P=Pago, T=Traslado, N=Nómina
+        $metodoPago = (string) $xml['MetodoPago']; // PUE or PPD (absent on type P/T/N)
+
+        // For Complementos de Pago (type P), extract payment amount and date
+        // from the pago20/pago10 complement instead of the root Total (which is 0).
+        if ($tipoComprobante === 'P') {
+            $paymentData = $this->extractPaymentComplement($xml, $ns);
+
+            if ($paymentData['monto'] <= 0) {
+                throw new \Exception('Complemento de Pago inválido: no se encontró el nodo de pagos (pago20/pago10) o el monto es 0.');
+            }
+
+            $total = $paymentData['monto'];
+            $fecha = $paymentData['fecha_pago'];
+        }
 
         // Extract Emisor
         $emisor = $xml->xpath('//cfdi:Emisor');
@@ -59,6 +132,8 @@ class CfdiParserService
             'folio' => $folio,
             'fecha_emision' => $fecha,
             'total' => $total,
+            'tipo_comprobante' => $tipoComprobante ?: null,
+            'metodo_pago' => $metodoPago ?: null,
             'rfc_emisor' => $rfcEmisor,
             'nombre_emisor' => $nombreEmisor,
             'rfc_receptor' => $rfcReceptor,

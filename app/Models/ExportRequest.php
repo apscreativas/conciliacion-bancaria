@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class ExportRequest extends Model
 {
     use HasFactory;
+    use \App\Models\Traits\TeamOwned;
 
     protected $fillable = [
         'team_id',

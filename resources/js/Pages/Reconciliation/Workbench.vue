@@ -34,15 +34,18 @@ const showErrorModal = ref(false);
 const errorMessage = ref("");
 const errorTitle = ref("");
 const reconciliationDate = ref(new Date().toISOString().split("T")[0]);
+// Track if the user manually edited the date — if so, don't overwrite it
+const userModifiedDate = ref(false);
 
-// Helper to calculate best date
+// Helper to calculate best date (only used when user has NOT manually set a date)
 const calculateBestDate = () => {
+    if (userModifiedDate.value) return;
+
     // 1. If no movements, default to today
     if (selectedMovements.value.length === 0) return;
 
     // 2. If no invoices, fallback to max amount logic or just latest movement
     if (selectedInvoices.value.length === 0) {
-        // Fallback: Max Amount Logic from before
         let maxAmount = -1;
         let bestDate: string | null = null;
         selectedMovements.value.forEach((id) => {
@@ -61,7 +64,6 @@ const calculateBestDate = () => {
     }
 
     // 3. Matcher Logic: Closest movement date to the *first* selected invoice date
-    // (Assuming invoices are usually from the same period if selected together)
     const firstInvoiceId = selectedInvoices.value[0];
     const invoice = props.invoices.find((i) => i.id === firstInvoiceId);
 
@@ -86,12 +88,16 @@ const calculateBestDate = () => {
 
     if (closestDate) {
         reconciliationDate.value = (closestDate as string).substring(0, 10);
-        console.log("Auto-selected closest date:", reconciliationDate.value);
     }
 };
 
-// Watch both selections
+// When selection changes, recalculate the date only if user hasn't manually set it.
+// Also reset the userModifiedDate flag when the selection is fully cleared.
 watch([selectedMovements, selectedInvoices], () => {
+    if (selectedMovements.value.length === 0 && selectedInvoices.value.length === 0) {
+        userModifiedDate.value = false;
+        reconciliationDate.value = new Date().toISOString().split("T")[0];
+    }
     calculateBestDate();
 });
 
@@ -221,6 +227,12 @@ const validateAndReconcile = () => {
 };
 
 const submitReconciliation = () => {
+    if (!reconciliationDate.value) {
+        errorTitle.value = wTrans("Error de Validación").value;
+        errorMessage.value = wTrans("Debe seleccionar una fecha de conciliación.").value;
+        showErrorModal.value = true;
+        return;
+    }
     showConfirmationModal.value = false;
     processing.value = true;
     router.post(
@@ -388,6 +400,7 @@ const autoReconcile = () => {
                     <DatePicker
                         v-model="reconciliationDate"
                         :placeholder="$t('dd/mm/aaaa')"
+                        @update:modelValue="userModifiedDate = true"
                     />
                     <p class="text-xs text-gray-500 mt-1">
                         {{

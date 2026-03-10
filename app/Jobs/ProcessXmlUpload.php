@@ -46,6 +46,14 @@ class ProcessXmlUpload implements ShouldQueue
 
             $data = $cfdiParser->parse($content);
 
+            // Defensive check: reject PPD invoices that bypassed sync validation
+            if ($data['tipo_comprobante'] === 'I' && $data['metodo_pago'] === 'PPD') {
+                Log::warning("ProcessXmlUpload: PPD invoice rejected (Archivo #{$this->archivo->id})");
+                $this->archivo->update(['estatus' => 'rechazado']);
+
+                return;
+            }
+
             DB::transaction(function () use ($data) {
                 // Duplicate check
                 $exists = Factura::where('team_id', $this->teamId)
@@ -87,6 +95,8 @@ class ProcessXmlUpload implements ShouldQueue
                     'team_id' => $this->teamId,
                     'file_id_xml' => $this->archivo->id,
                     'uuid' => $data['uuid'],
+                    'tipo_comprobante' => $data['tipo_comprobante'],
+                    'metodo_pago' => $data['metodo_pago'],
                     'monto' => $data['total'],
                     'fecha_emision' => $data['fecha_emision'],
                     'rfc' => $data['rfc_receptor'], // Corrected: Store Client/Receiver RFC

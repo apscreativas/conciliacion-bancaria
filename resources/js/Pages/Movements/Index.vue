@@ -5,7 +5,7 @@ import SecondaryButton from "@/Components/SecondaryButton.vue";
 import ConfirmationModal from "@/Components/ConfirmationModal.vue";
 import PrimaryButton from "@/Components/PrimaryButton.vue";
 import { Head, router, useForm, Link } from "@inertiajs/vue3";
-import { ref, computed, reactive } from "vue";
+import { ref, computed, reactive, onUnmounted } from "vue";
 import axios from "axios";
 import MovementFilters from "@/Pages/Reconciliation/Partials/MovementFilters.vue";
 import MovementTable from "@/Pages/Reconciliation/Partials/MovementTable.vue";
@@ -63,6 +63,13 @@ const showModal = ref(false);
 const selectedFile = ref<any>(null);
 const fileMovements = ref<any[]>([]);
 const isLoading = ref(false);
+const loadError = ref<string | null>(null);
+// AbortController to cancel in-flight requests when a new one is started
+let activeAbortController: AbortController | null = null;
+
+onUnmounted(() => {
+    activeAbortController?.abort();
+});
 
 const form = useForm({
     file: null as File | null,
@@ -159,17 +166,27 @@ const formatCurrency = (amount: number) => {
 };
 
 const viewDetails = async (file: any) => {
+    // Cancel any in-flight request for a previous file
+    activeAbortController?.abort();
+    activeAbortController = new AbortController();
+
     selectedFile.value = file;
     showModal.value = true;
     isLoading.value = true;
+    loadError.value = null;
     fileMovements.value = [];
     activeTab.value = "all";
 
     try {
-        const response = await axios.get(route("movements.show", file.id));
+        const response = await axios.get(route("movements.show", file.id), {
+            signal: activeAbortController.signal,
+        });
         fileMovements.value = response.data;
-    } catch (error) {
+    } catch (error: any) {
+        // Ignore aborted requests (user switched file quickly)
+        if (axios.isCancel(error) || error?.code === "ERR_CANCELED") return;
         console.error("Error fetching movements", error);
+        loadError.value = "No se pudieron cargar los movimientos. Intente de nuevo.";
     } finally {
         isLoading.value = false;
     }
@@ -640,6 +657,12 @@ const formatDateNoTime = (date?: string) => {
                         >
                     </div>
                     <div
+                        v-else-if="loadError"
+                        class="text-center py-4 text-red-600 dark:text-red-400 text-sm"
+                    >
+                        {{ loadError }}
+                    </div>
+                    <div
                         v-else-if="filteredMovements.length === 0"
                         class="text-center py-4 text-gray-500"
                     >
@@ -672,7 +695,7 @@ const formatDateNoTime = (date?: string) => {
                                     <td class="py-2 px-4 whitespace-nowrap">
                                         {{ formatDateNoTime(mov.fecha) }}
                                     </td>
-                                    <td class="py-2 px-4">
+                                    <td class="py-3 px-4 min-w-[300px] whitespace-normal break-words text-gray-700 dark:text-gray-300">
                                         {{ mov.descripcion }}
                                     </td>
                                     <td class="py-2 px-4">

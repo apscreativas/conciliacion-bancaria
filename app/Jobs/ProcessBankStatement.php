@@ -69,8 +69,15 @@ class ProcessBankStatement implements ShouldQueue
 
             DB::transaction(function () use ($movements) {
                 foreach ($movements as $movData) {
-                    // Generate hash for duplicate detection
-                    $hash = md5($movData['fecha'].$movData['monto'].$movData['referencia'].$movData['descripcion']);
+                    // Generate hash for duplicate detection.
+                    // Use SHA256 with json_encode to avoid collisions from string concatenation
+                    // (e.g. fecha="2024-01-1" monto="01000" vs fecha="2024-01-10" monto="1000").
+                    $hash = hash('sha256', json_encode([
+                        'fecha' => $movData['fecha'],
+                        'monto' => $movData['monto'],
+                        'referencia' => $movData['referencia'],
+                        'descripcion' => $movData['descripcion'],
+                    ]));
 
                     $exists = Movimiento::where('team_id', $this->teamId)
                         ->where('hash', $hash)

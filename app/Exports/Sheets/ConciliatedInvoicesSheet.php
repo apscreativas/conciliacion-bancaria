@@ -129,12 +129,14 @@ class ConciliatedInvoicesSheet implements FromQuery, ShouldAutoSize, WithChunkRe
 
         $totalPagos = DB::table('conciliacions')
             ->join('movimientos', 'conciliacions.movimiento_id', '=', 'movimientos.id')
+            ->where('conciliacions.team_id', $this->teamId)
             ->where('group_id', $groupId)
             ->distinct()
             ->sum('movimientos.monto');
 
         $totalFacturas = DB::table('conciliacions')
             ->join('facturas', 'conciliacions.factura_id', '=', 'facturas.id')
+            ->where('conciliacions.team_id', $this->teamId)
             ->where('group_id', $groupId)
             ->distinct()
             ->sum('facturas.monto');

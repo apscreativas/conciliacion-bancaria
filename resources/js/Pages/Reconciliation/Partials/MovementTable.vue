@@ -162,8 +162,7 @@ const formatCurrency = (amount: number) => {
                                 {{ formatDateNoTime(mov.fecha) }}
                             </td>
                             <td
-                                class="py-4 px-6 max-w-sm truncate"
-                                :title="mov.descripcion"
+                                class="py-4 px-6 min-w-[300px] whitespace-normal break-words"
                             >
                                 {{ mov.descripcion }}
                             </td>

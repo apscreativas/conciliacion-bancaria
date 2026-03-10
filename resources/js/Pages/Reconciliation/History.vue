@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import AuthenticatedLayout from "@/Layouts/AuthenticatedLayout.vue";
 import { Head, Link, router, useForm } from "@inertiajs/vue3";
-import { ref, watch, reactive } from "vue";
+import { ref, watch, reactive, computed } from "vue";
 import debounce from "lodash/debounce";
 import ConfirmationModal from "@/Components/ConfirmationModal.vue";
 import PrimaryButton from "@/Components/PrimaryButton.vue";
@@ -87,6 +87,12 @@ watch(
 const confirmingUnreconcile = ref(false);
 const groupIdToUnlink = ref<string | null>(null);
 const form = useForm({});
+
+// Computed to safely retrieve the group being unlinked, avoiding repeated .find() in the template
+const groupToUnlink = computed(() => {
+    if (!groupIdToUnlink.value) return null;
+    return props.reconciledGroups.data.find((g) => g.id === groupIdToUnlink.value) ?? null;
+});
 
 const confirmUnreconcile = (groupId: string) => {
     groupIdToUnlink.value = groupId;
@@ -255,15 +261,9 @@ const closeModal = () => {
             <template #content>
                 ¿Estás seguro de que deseas desvincular este grupo completo? Se
                 eliminarán las relaciones entre
-                {{
-                    reconciledGroups.data.find((g) => g.id === groupIdToUnlink)
-                        ?.invoices.length
-                }}
+                {{ groupToUnlink?.invoices.length ?? 0 }}
                 facturas y
-                {{
-                    reconciledGroups.data.find((g) => g.id === groupIdToUnlink)
-                        ?.movements.length
-                }}
+                {{ groupToUnlink?.movements.length ?? 0 }}
                 pagos. El saldo volverá a estar pendiente.
             </template>
 

@@ -3,6 +3,7 @@ import AuthenticatedLayout from "@/Layouts/AuthenticatedLayout.vue";
 import { Head, router, Link, useForm } from "@inertiajs/vue3";
 import { ref, computed } from "vue";
 import ConfirmationModal from "@/Components/ConfirmationModal.vue";
+import Modal from "@/Components/Modal.vue";
 import PrimaryButton from "@/Components/PrimaryButton.vue";
 import SecondaryButton from "@/Components/SecondaryButton.vue";
 import InvoiceFilters from "@/Pages/Reconciliation/Partials/InvoiceFilters.vue";
@@ -20,6 +21,8 @@ const props = defineProps<{
                 rfc: string;
                 nombre: string;
                 fecha_emision: string;
+                tipo_comprobante?: string;
+                metodo_pago?: string;
                 conciliaciones_count?: number;
                 conciliaciones?: Array<{
                     id: number;
@@ -194,6 +197,42 @@ const formatCurrency = (amount: number) => {
         currency: "MXN",
     }).format(amount);
 };
+
+// View detail modal
+const showViewModal = ref(false);
+const viewingFile = ref<typeof props.files.data[0] | null>(null);
+
+const viewInvoice = (file: typeof props.files.data[0]) => {
+    viewingFile.value = file;
+    showViewModal.value = true;
+};
+
+const closeViewModal = () => {
+    showViewModal.value = false;
+    viewingFile.value = null;
+};
+
+const formatDate = (date?: string) => {
+    if (!date) return "N/A";
+    const d = new Date(date);
+    const offset = d.getTimezoneOffset() * 60000;
+    return new Date(d.getTime() + offset).toLocaleDateString("es-MX", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+    });
+};
+
+const tipoLabel = (tipo?: string) => {
+    const map: Record<string, string> = {
+        I: "Ingreso",
+        E: "Egreso",
+        P: "Complemento de Pago",
+        T: "Traslado",
+        N: "Nómina",
+    };
+    return tipo ? map[tipo] || tipo : "N/A";
+};
 </script>
 
 <template>
@@ -291,13 +330,91 @@ const formatCurrency = (amount: number) => {
                             @sort="handleSort"
                             @toggle-select="toggleSelect"
                             @toggle-all="toggleAll"
-                            @delete="confirmFileDeletion"
+                            @view="viewInvoice"
                             @update-per-page="handlePerPage"
                         />
                     </div>
                 </div>
             </div>
         </div>
+
+        <!-- Invoice Detail Modal -->
+        <Modal :show="showViewModal" @close="closeViewModal" max-width="lg">
+            <div class="p-6" v-if="viewingFile?.factura">
+                <div class="flex justify-between items-start mb-6">
+                    <h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                        {{ $t("Detalle de Factura") }}
+                    </h2>
+                    <button @click="closeViewModal" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
+
+                <dl class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4 text-sm">
+                    <div>
+                        <dt class="font-medium text-gray-500 dark:text-gray-400">{{ $t("UUID") }}</dt>
+                        <dd class="mt-1 text-gray-900 dark:text-gray-100 font-mono text-xs break-all">
+                            {{ viewingFile.factura.uuid || "N/A" }}
+                        </dd>
+                    </div>
+                    <div>
+                        <dt class="font-medium text-gray-500 dark:text-gray-400">{{ $t("RFC") }}</dt>
+                        <dd class="mt-1 text-gray-900 dark:text-gray-100 font-mono">
+                            {{ viewingFile.factura.rfc || "N/A" }}
+                        </dd>
+                    </div>
+                    <div class="sm:col-span-2">
+                        <dt class="font-medium text-gray-500 dark:text-gray-400">{{ $t("Nombre / Razón Social") }}</dt>
+                        <dd class="mt-1 text-gray-900 dark:text-gray-100">
+                            {{ viewingFile.factura.nombre || "N/A" }}
+                        </dd>
+                    </div>
+                    <div>
+                        <dt class="font-medium text-gray-500 dark:text-gray-400">{{ $t("Monto") }}</dt>
+                        <dd class="mt-1 text-xl font-bold text-gray-900 dark:text-gray-100">
+                            {{ formatCurrency(Number(viewingFile.factura.monto)) }}
+                        </dd>
+                    </div>
+                    <div>
+                        <dt class="font-medium text-gray-500 dark:text-gray-400">{{ $t("Fecha de Emisión") }}</dt>
+                        <dd class="mt-1 text-gray-900 dark:text-gray-100">
+                            {{ formatDate(viewingFile.factura.fecha_emision) }}
+                        </dd>
+                    </div>
+                    <div>
+                        <dt class="font-medium text-gray-500 dark:text-gray-400">{{ $t("Tipo de Comprobante") }}</dt>
+                        <dd class="mt-1 text-gray-900 dark:text-gray-100">
+                            {{ tipoLabel(viewingFile.factura.tipo_comprobante) }}
+                        </dd>
+                    </div>
+                    <div>
+                        <dt class="font-medium text-gray-500 dark:text-gray-400">{{ $t("Método de Pago") }}</dt>
+                        <dd class="mt-1 text-gray-900 dark:text-gray-100">
+                            {{ viewingFile.factura.metodo_pago || "N/A" }}
+                        </dd>
+                    </div>
+                    <div class="sm:col-span-2">
+                        <dt class="font-medium text-gray-500 dark:text-gray-400">{{ $t("Estado") }}</dt>
+                        <dd class="mt-1">
+                            <span
+                                v-if="viewingFile.factura.conciliaciones_count && viewingFile.factura.conciliaciones_count > 0"
+                                class="inline-flex items-center bg-green-100 text-green-800 text-xs font-semibold px-2.5 py-0.5 rounded border border-green-400"
+                            >
+                                {{ $t("CONCILIADO") }}
+                            </span>
+                            <span
+                                v-else
+                                class="inline-flex items-center bg-yellow-100 text-yellow-800 text-xs font-semibold px-2.5 py-0.5 rounded border border-yellow-400"
+                            >
+                                {{ $t("PENDIENTE") }}
+                            </span>
+                        </dd>
+                    </div>
+                </dl>
+            </div>
+        </Modal>
 
         <ConfirmationModal :show="confirmingFileDeletion" @close="closeModal">
             <template #title> {{ $t("Eliminar Factura") }} </template>

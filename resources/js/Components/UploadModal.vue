@@ -150,7 +150,12 @@ const processQueue = async () => {
                 if (response.data.results.xml_processed > 0) {
                     uploadState.successCount++;
                 } else if (response.data.results.xml_xml_duplicates > 0) {
-                    uploadState.logs.push(`Duplicado: ${file.name}`);
+                    const dupErrors = response.data.results.file_errors;
+                    if (dupErrors && dupErrors.length > 0) {
+                        dupErrors.forEach((err) => uploadState.logs.push(err));
+                    } else {
+                        uploadState.logs.push(`Duplicado: ${file.name}`);
+                    }
                     uploadState.duplicateCount++;
                 } else if (
                     response.data.results.xml_other_errors > 0 ||
@@ -176,7 +181,12 @@ const processQueue = async () => {
                 }
             } else {
                 uploadState.errorCount++;
-                uploadState.logs.push(`Falló: ${file.name}`);
+                const errors = response.data.results?.file_errors;
+                if (errors && errors.length > 0) {
+                    errors.forEach((err) => uploadState.logs.push(err));
+                } else {
+                    uploadState.logs.push(`Falló: ${file.name}`);
+                }
             }
         } catch (error) {
             console.error(error);

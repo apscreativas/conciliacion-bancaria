@@ -24,7 +24,6 @@ const form = useForm({
     start_row: props.format?.start_row || 1,
     date_column: props.format?.date_column || "",
     description_column: props.format?.description_column || "",
-    description_column: props.format?.description_column || "",
     amount_column: props.format?.amount_column || "",
     debit_column: props.format?.debit_column || "",
     credit_column: props.format?.credit_column || "",
@@ -35,7 +34,6 @@ const form = useForm({
 
 const columnMappings = ref({
     fecha: props.format?.date_column || null,
-    descripcion: props.format?.description_column || null,
     descripcion: props.format?.description_column || null,
     monto: props.format?.amount_column || null,
     cargo: props.format?.debit_column || null,

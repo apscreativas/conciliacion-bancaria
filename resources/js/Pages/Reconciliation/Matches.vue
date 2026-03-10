@@ -9,17 +9,20 @@ const props = defineProps<{
         movement: any;
         score: number;
         difference: number;
+        confidence: 'high' | 'medium' | 'low';
+        match_reasons: string[];
     }>;
     tolerance: {
         amount: number;
     };
 }>();
 
-const selectedMatches = ref<number[]>([]);
-
-// Initialize all selected by default? Maybe better to let user choose, or select high confidence ones.
-// Let's select all by default for "Auto" feel, user deselects bad ones.
-selectedMatches.value = props.matches.map((_, index) => index);
+// Pre-select high confidence matches
+const selectedMatches = ref<number[]>(
+    props.matches
+        .map((m, i) => m.confidence === 'high' ? i : -1)
+        .filter(i => i !== -1)
+);
 
 const form = useForm({
     matches: [] as Array<{ invoice_id: number; movement_id: number }>
@@ -55,6 +58,19 @@ const totalSelectedAmount = computed(() => {
 // Format currency
 const currency = (amount: number | string) => {
     return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(Number(amount));
+};
+
+const reasonLabels: Record<string, string> = {
+    monto_unico: 'Monto Único',
+    rfc: 'RFC',
+    uuid: 'UUID',
+    nombre: 'Nombre',
+};
+
+const confidenceConfig: Record<string, { label: string; bg: string; text: string }> = {
+    high: { label: 'Alta', bg: 'bg-green-100 dark:bg-green-900/50', text: 'text-green-800 dark:text-green-300' },
+    medium: { label: 'Media', bg: 'bg-yellow-100 dark:bg-yellow-900/50', text: 'text-yellow-800 dark:text-yellow-300' },
+    low: { label: 'Baja', bg: 'bg-red-100 dark:bg-red-900/50', text: 'text-red-800 dark:text-red-300' },
 };
 
 // Format date (UTC safe)
@@ -138,7 +154,7 @@ const date = (dateString: string) => {
                                         <th class="p-4 font-semibold text-gray-600 dark:text-gray-300">Factura</th>
                                         <th class="p-4 font-semibold text-gray-600 dark:text-gray-300">Movimiento Bancario</th>
                                         <th class="p-4 font-semibold text-gray-600 text-center dark:text-gray-300">Diferencia</th>
-                                        <th class="p-4 font-semibold text-gray-600 text-center dark:text-gray-300">Score</th>
+                                        <th class="p-4 font-semibold text-gray-600 text-center dark:text-gray-300">Confianza</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -182,8 +198,20 @@ const date = (dateString: string) => {
                                             </div>
                                         </td>
                                         <td class="p-4 text-center">
-                                            <div class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300">
-                                                {{ Math.round(match.score) }}%
+                                            <div
+                                                class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+                                                :class="[confidenceConfig[match.confidence].bg, confidenceConfig[match.confidence].text]"
+                                            >
+                                                {{ confidenceConfig[match.confidence].label }} ({{ match.score }})
+                                            </div>
+                                            <div v-if="match.match_reasons.length" class="mt-1 flex flex-wrap gap-1 justify-center">
+                                                <span
+                                                    v-for="reason in match.match_reasons"
+                                                    :key="reason"
+                                                    class="inline-block px-1.5 py-0.5 text-[10px] rounded bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400"
+                                                >
+                                                    {{ reasonLabels[reason] || reason }}
+                                                </span>
                                             </div>
                                         </td>
                                     </tr>

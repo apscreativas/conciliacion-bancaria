@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import AuthenticatedLayout from "@/Layouts/AuthenticatedLayout.vue";
 import { Head, router } from "@inertiajs/vue3";
-import { ref, watch } from "vue";
+import { ref, watch, onUnmounted } from "vue";
 import { debounce } from "lodash";
 import StatusTabs from "./Partials/StatusTabs.vue";
 import StatusSummary from "./Partials/StatusSummary.vue";
@@ -74,6 +74,20 @@ watch([invoiceSort, invoiceDirection, movementSort, movementDirection], () =>
 );
 
 const exportProcessing = ref(false);
+// Track the active poll interval so we can clear it on unmount or on new export
+const activeExportInterval = ref<ReturnType<typeof setInterval> | null>(null);
+
+const clearActiveInterval = () => {
+    if (activeExportInterval.value !== null) {
+        clearInterval(activeExportInterval.value);
+        activeExportInterval.value = null;
+    }
+};
+
+// Clear interval when component is destroyed to prevent memory leaks
+onUnmounted(() => {
+    clearActiveInterval();
+});
 
 const startExport = async (format: string) => {
     if (exportProcessing.value) return;
@@ -110,21 +124,24 @@ const startExport = async (format: string) => {
 };
 
 const pollExport = (id: number) => {
-    const interval = setInterval(async () => {
+    // Cancel any previous poll before starting a new one
+    clearActiveInterval();
+
+    activeExportInterval.value = setInterval(async () => {
         try {
             const res = await axios.get(
                 route("reconciliation.export.status", id),
             );
 
             if (res.data.status === "completed") {
-                clearInterval(interval);
+                clearActiveInterval();
                 exportProcessing.value = false;
                 window.location.href = route(
                     "reconciliation.export.download",
                     id,
                 );
             } else if (res.data.status === "failed") {
-                clearInterval(interval);
+                clearActiveInterval();
                 exportProcessing.value = false;
                 alert(
                     "La exportación falló: " +
@@ -132,7 +149,7 @@ const pollExport = (id: number) => {
                 );
             }
         } catch (e) {
-            clearInterval(interval);
+            clearActiveInterval();
             exportProcessing.value = false;
             alert("Error consultando estado de exportación.");
         }

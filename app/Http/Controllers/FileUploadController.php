@@ -59,6 +59,14 @@ class FileUploadController extends Controller
                             continue;
                         }
 
+                        // Reject PPD invoices — user should upload Complemento de Pago instead
+                        if ($data['tipo_comprobante'] === 'I' && $data['metodo_pago'] === 'PPD') {
+                            $results['xml_other_errors']++;
+                            $results['file_errors'][] = "Rechazado ({$file->getClientOriginalName()}): Esta factura es PPD (Pago en Parcialidades o Diferido). Suba el Complemento de Pago correspondiente.";
+
+                            continue;
+                        }
+
                         // Flexible RFC Validation: Team must be either Emisor or Receptor
                         if ($teamRfc) {
                             $emisorRfc = strtoupper($data['rfc_emisor'] ?? '');
@@ -79,6 +87,7 @@ class FileUploadController extends Controller
 
                         if ($exists) {
                             $results['xml_xml_duplicates']++;
+                            $results['file_errors'][] = "Duplicado ({$file->getClientOriginalName()}): Esta factura ya fue registrada anteriormente (UUID: {$data['uuid']}).";
 
                             continue;
                         }
@@ -143,16 +152,10 @@ class FileUploadController extends Controller
                         }
                     }
 
-                    // 3. Fallback: If we couldn't resolve a Bank via Format, use the first available Bank.
-                    // We MUST have a banco_id to create an Archivo/Movimiento.
+                    // 3. If we couldn't resolve a Bank via Format, fail explicitly.
+                    // Silently assigning a wrong bank corrupts data, so we reject the upload instead.
                     if (! $bancoId) {
-                        $banco = Banco::first();
-                        if ($banco) {
-                            $bancoId = $banco->id;
-                            Log::warning("FileUpload: Could not resolve Bank from Format '{$bankCode}'. Defaulting to Bank ID {$banco->id}.");
-                        } else {
-                            throw new \Exception('No hay bancos configurados en el sistema.');
-                        }
+                        throw new \Exception("No se pudo determinar el banco para el formato seleccionado (ID: {$bankCode}). Configure un banco en el formato bancario.");
                     }
 
                     // --- SYNCHRONOUS VALIDATION ---
@@ -235,10 +238,13 @@ class FileUploadController extends Controller
             }
 
             if ($request->wantsJson()) {
-                // If there are file errors, maybe switch to 422 or partial success?
-                // For now, return 200 with error details.
+                // success = true only if at least one file was processed (or a statement was queued).
+                // If every uploaded file failed, we return success=false so the frontend can react.
+                $statementQueued = collect($toasts)->contains(fn ($t) => $t['type'] === 'success');
+                $anySuccess = $results['xml_processed'] > 0 || $statementQueued || $results['xml_xml_duplicates'] > 0;
+
                 return response()->json([
-                    'success' => true,
+                    'success' => $anySuccess,
                     'results' => $results,
                     'toasts' => $toasts,
                     'processed_xml_count' => $results['xml_processed'],
