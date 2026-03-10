@@ -150,19 +150,18 @@ class FileUploadController extends Controller
 
                     // --- SYNCHRONOUS VALIDATION ---
                     // Parse the file to ensure it matches the selected format BEFORE queuing/storing.
-                    // IMPORTANT: We must store a temp file with the correct extension so the Parser detects it is Excel/CSV correctly.
-                    $tempPath = null;
+                    $tempLocalPath = null;
                     try {
                         $parserIdentifier = $bankFormatId ? (string) $bankFormatId : ($banco ? $banco->codigo : '');
                         $validatorParser = StatementParserFactory::make($parserIdentifier, $teamId);
 
-                        // Store validation copy
+                        // Copy to a local temp file with the correct extension
+                        // so the parser can detect the file type (xlsx/csv)
                         $ext = $file->getClientOriginalExtension();
-                        $tempName = 'validate_'.Str::random(10).'.'.$ext;
-                        $tempPath = $file->storeAs('temp', $tempName);
-                        $absPath = Storage::path($tempPath);
+                        $tempLocalPath = sys_get_temp_dir().'/validate_'.Str::random(10).'.'.$ext;
+                        copy($file->getRealPath(), $tempLocalPath);
 
-                        $previewMovements = $validatorParser->parse($absPath);
+                        $previewMovements = $validatorParser->parse($tempLocalPath);
 
                         if (empty($previewMovements)) {
                             throw new \Exception('El archivo no contiene movimientos válidos para el formato seleccionado.');
@@ -182,8 +181,8 @@ class FileUploadController extends Controller
 
                         return back()->with('toasts', $toasts);
                     } finally {
-                        if ($tempPath && Storage::exists($tempPath)) {
-                            Storage::delete($tempPath);
+                        if ($tempLocalPath && file_exists($tempLocalPath)) {
+                            @unlink($tempLocalPath);
                         }
                     }
                     // ------------------------------
