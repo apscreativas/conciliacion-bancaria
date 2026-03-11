@@ -174,15 +174,30 @@ const date = (dateString: string) => {
                                             >
                                         </td>
                                         <td class="p-4">
-                                            <div class="font-medium text-gray-900 dark:text-gray-100">{{ match.invoice.nombre || match.invoice.rfc }}</div>
-                                            <div class="text-xs text-gray-500 dark:text-gray-400">{{ match.invoice.uuid }}</div>
+                                            <div class="font-medium" :class="match.match_reasons.includes('nombre') ? 'text-green-700 dark:text-green-400' : 'text-gray-900 dark:text-gray-100'">{{ match.invoice.nombre || match.invoice.rfc }}</div>
+                                            <div class="text-xs" :class="match.match_reasons.includes('uuid') ? 'text-green-600 dark:text-green-400 font-semibold' : 'text-gray-500 dark:text-gray-400'">{{ match.invoice.uuid }}</div>
+                                            <div v-if="match.invoice.rfc" class="text-xs mt-0.5" :class="match.match_reasons.includes('rfc') ? 'text-green-600 dark:text-green-400 font-semibold' : 'text-gray-500 dark:text-gray-400'">{{ match.invoice.rfc }}</div>
                                             <div class="flex justify-between items-center mt-1">
-                                                <span class="text-xs bg-gray-100 px-2 py-0.5 rounded text-gray-600 dark:bg-gray-700 dark:text-gray-300">{{ date(match.invoice.fecha_emision) }}</span>
+                                                <div class="flex items-center gap-1.5">
+                                                    <span class="text-xs bg-gray-100 px-2 py-0.5 rounded text-gray-600 dark:bg-gray-700 dark:text-gray-300">{{ date(match.invoice.fecha_emision) }}</span>
+                                                    <span
+                                                        v-if="match.invoice.tipo_comprobante === 'P'"
+                                                        class="px-1.5 py-0.5 text-[10px] font-bold rounded bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300"
+                                                    >
+                                                        Complemento
+                                                    </span>
+                                                    <span
+                                                        v-else-if="match.invoice.metodo_pago === 'PUE'"
+                                                        class="px-1.5 py-0.5 text-[10px] font-bold rounded bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
+                                                    >
+                                                        PUE
+                                                    </span>
+                                                </div>
                                                 <span class="font-bold text-gray-800 dark:text-gray-200">{{ currency(match.invoice.monto) }}</span>
                                             </div>
                                         </td>
                                         <td class="p-4 border-l border-gray-100 dark:border-gray-700">
-                                            <div class="font-medium text-gray-900 truncate max-w-xs dark:text-gray-100" :title="match.movement.descripcion">{{ match.movement.descripcion }}</div>
+                                            <div class="font-medium text-gray-900 dark:text-gray-100 break-words text-sm leading-tight">{{ match.movement.descripcion }}</div>
                                             <div class="text-xs text-gray-500 dark:text-gray-400">{{ match.movement.referencia || 'Sin Referencia' }}</div>
                                             <div class="flex justify-between items-center mt-1">
                                                 <span class="text-xs bg-gray-100 px-2 py-0.5 rounded text-gray-600 dark:bg-gray-700 dark:text-gray-300">{{ date(match.movement.fecha) }}</span>

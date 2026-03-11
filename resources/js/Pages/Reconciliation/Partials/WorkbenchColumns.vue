@@ -197,6 +197,18 @@ const sortedMovements = computed(() => {
                             >
                                 {{ invoice.uuid.substring(0, 18) }}..
                             </div>
+                            <span
+                                v-if="invoice.tipo_comprobante === 'P'"
+                                class="inline-block mt-1 px-1.5 py-0.5 text-[10px] font-bold rounded bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300"
+                            >
+                                Complemento de Pago
+                            </span>
+                            <span
+                                v-else-if="invoice.metodo_pago === 'PUE'"
+                                class="inline-block mt-1 px-1.5 py-0.5 text-[10px] font-bold rounded bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
+                            >
+                                PUE
+                            </span>
                         </div>
                         <div class="text-right">
                             <div
