@@ -7,6 +7,7 @@ const props = defineProps<{
         data: Array<{
             id: number;
             path: string;
+            original_name?: string;
             created_at: string;
             factura?: {
                 uuid: string;
@@ -59,6 +60,26 @@ const formatCurrency = (amount: number) => {
         currency: "MXN",
     }).format(amount);
 };
+
+const tipoLabel = (factura?: { tipo_comprobante?: string; metodo_pago?: string }) => {
+    if (!factura) return 'N/A';
+    if (factura.tipo_comprobante === 'P') return 'Complemento';
+    if (factura.metodo_pago === 'PUE') return 'PUE';
+    return factura.metodo_pago || 'N/A';
+};
+
+const tipoClass = (factura?: { tipo_comprobante?: string; metodo_pago?: string }) => {
+    if (!factura) return 'bg-gray-100 text-gray-600 border-gray-300';
+    if (factura.tipo_comprobante === 'P') return 'bg-purple-100 text-purple-700 border-purple-400';
+    if (factura.metodo_pago === 'PUE') return 'bg-blue-100 text-blue-700 border-blue-400';
+    return 'bg-gray-100 text-gray-600 border-gray-300';
+};
+
+const fileExtension = (name?: string) => {
+    if (!name) return '';
+    const parts = name.split('.');
+    return parts.length > 1 ? '.' + parts.pop() : '';
+};
 </script>
 
 <template>
@@ -87,7 +108,6 @@ const formatCurrency = (amount: number) => {
                                 />
                             </div>
                         </th>
-                        <th scope="col" class="py-3 px-6">{{ $t("ID") }}</th>
                         <th scope="col" class="py-3 px-6">
                             {{ $t("RECEPTOR (RFC)") }}
                         </th>
@@ -118,6 +138,21 @@ const formatCurrency = (amount: number) => {
                                 </span>
                             </div>
                         </th>
+                        <th
+                            scope="col"
+                            class="px-6 py-3 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700"
+                            @click="emit('sort', 'tipo')"
+                        >
+                            <div class="flex items-center gap-1">
+                                {{ $t("TIPO") }}
+                                <span v-if="sortColumn === 'tipo'">
+                                    {{ sortDirection === "asc" ? "↑" : "↓" }}
+                                </span>
+                            </div>
+                        </th>
+                        <th scope="col" class="py-3 px-6">
+                            {{ $t("ARCHIVO") }}
+                        </th>
                         <th scope="col" class="py-3 px-6">
                             {{ $t("ESTADO") }}
                         </th>
@@ -142,7 +177,6 @@ const formatCurrency = (amount: number) => {
                                 />
                             </div>
                         </td>
-                        <td class="py-4 px-6">{{ file.id }}</td>
                         <td class="py-4 px-6">
                             {{ file.factura?.rfc || "N/A" }}
                         </td>
@@ -158,6 +192,24 @@ const formatCurrency = (amount: number) => {
                         </td>
                         <td class="py-4 px-6">
                             {{ formatSemDate(file.factura?.fecha_emision) }}
+                        </td>
+                        <td class="py-4 px-6">
+                            <span
+                                class="text-xs font-semibold px-2.5 py-0.5 rounded border"
+                                :class="tipoClass(file.factura)"
+                            >
+                                {{ tipoLabel(file.factura) }}
+                            </span>
+                        </td>
+                        <td class="py-4 px-6">
+                            <span
+                                v-if="file.original_name"
+                                class="text-xs text-gray-500 dark:text-gray-400 truncate max-w-[150px] inline-block"
+                                :title="file.original_name"
+                            >
+                                {{ file.original_name }}
+                            </span>
+                            <span v-else class="text-xs text-gray-400">—</span>
                         </td>
                         <td class="py-4 px-6">
                             <span
