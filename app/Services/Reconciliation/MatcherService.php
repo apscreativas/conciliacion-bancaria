@@ -111,16 +111,13 @@ class MatcherService
                     }
                 }
 
-                // Name fuzzy match: proportional up to 34
+                // Name match: full 34 if any name tokens match
                 if ($descriptionScore < 34 && ! empty($parsed['name_tokens'])) {
                     $invoiceName = $invoice->nombre ?? $invoice->nombre_emisor ?? '';
                     $nameRatio = $this->parser->nameMatchScore($parsed['name_tokens'], $invoiceName);
                     if ($nameRatio > 0) {
-                        $nameScore = (int) round($nameRatio * 34);
-                        if ($nameScore > $descriptionScore) {
-                            $descriptionScore = $nameScore;
-                            $reasons[] = 'nombre';
-                        }
+                        $descriptionScore = 34;
+                        $reasons[] = 'nombre';
                     }
                 }
 
