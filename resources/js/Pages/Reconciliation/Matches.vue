@@ -67,6 +67,9 @@ const escapeHtml = (str: string): string => {
 
 const escapeRegex = (str: string): string => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+const MARK_OPEN = '<span style="background-color:#bbf7d0;color:#14532d;border-radius:2px;padding:0 2px;font-weight:600;">';
+const MARK_CLOSE = '</span>';
+
 const highlightTerms = (text: string, terms: string[]): string => {
     if (!text || !terms.length) return escapeHtml(text || '');
     const escaped = escapeHtml(text);
@@ -74,46 +77,61 @@ const highlightTerms = (text: string, terms: string[]): string => {
     if (!validTerms.length) return escaped;
     const pattern = validTerms.map(t => escapeRegex(escapeHtml(t))).join('|');
     const regex = new RegExp(`(${pattern})`, 'gi');
-    return escaped.replace(regex, '<mark class="bg-green-200 dark:bg-green-700/60 text-green-900 dark:text-green-100 rounded px-0.5 font-semibold">$1</mark>');
+    return escaped.replace(regex, `${MARK_OPEN}$1${MARK_CLOSE}`);
 };
 
-// Build highlight terms from invoice data for the movement description
-const getMovementHighlightTerms = (match: any): string[] => {
-    const terms: string[] = [];
-    if (match.match_reasons.includes('rfc') && match.invoice.rfc) {
-        terms.push(match.invoice.rfc);
+// Highlight movement description by scanning for RFC patterns, UUID hex fragments, and name tokens
+const highlightDescription = (text: string, match: any): string => {
+    if (!text) return '';
+    const reasons = match.match_reasons;
+    if (!reasons.length) return escapeHtml(text);
+
+    const termsToHighlight: string[] = [];
+
+    // RFC: search for the invoice RFC directly
+    if (reasons.includes('rfc') && match.invoice.rfc) {
+        termsToHighlight.push(match.invoice.rfc);
     }
-    if (match.match_reasons.includes('uuid') && match.invoice.uuid) {
-        terms.push(match.invoice.uuid);
-        terms.push(match.invoice.uuid.replace(/-/g, ''));
-        // Also add last 8 chars as fragment (common in bank descriptions)
-        const uuid = match.invoice.uuid.replace(/-/g, '');
-        if (uuid.length >= 8) terms.push(uuid.slice(-8));
+
+    // UUID: scan description for hex blocks that are part of the invoice UUID
+    if (reasons.includes('uuid') && match.invoice.uuid) {
+        const uuidNoDashes = match.invoice.uuid.replace(/-/g, '').toUpperCase();
+        // Add full UUID variants
+        termsToHighlight.push(match.invoice.uuid);
+        termsToHighlight.push(match.invoice.uuid.replace(/-/g, ''));
+        // Find hex blocks ≥6 chars in the raw text that are part of the UUID
+        const hexPattern = /[0-9a-f]{6,}/gi;
+        let hexMatch;
+        while ((hexMatch = hexPattern.exec(text)) !== null) {
+            const found = hexMatch[0].toUpperCase();
+            if (uuidNoDashes.includes(found) || found.includes(uuidNoDashes)) {
+                termsToHighlight.push(hexMatch[0]);
+            }
+        }
+        // Also find UUID-with-dashes patterns
+        const uuidPattern = /[0-9a-f]{8}(?:-[0-9a-f]{4}){1,3}(?:-[0-9a-f]{1,12})?/gi;
+        let uuidMatch;
+        while ((uuidMatch = uuidPattern.exec(text)) !== null) {
+            termsToHighlight.push(uuidMatch[0]);
+        }
     }
-    if (match.match_reasons.includes('nombre') && match.invoice.nombre) {
+
+    // Name tokens
+    if (reasons.includes('nombre') && match.invoice.nombre) {
         const stopWords = new Set(['de', 'del', 'la', 'las', 'los', 'el', 'en', 'con', 'por', 'para', 'sa', 'cv', 'sc', 'sas', 'srl']);
         const tokens = match.invoice.nombre.split(/\s+/).filter((t: string) => t.length > 2 && !stopWords.has(t.toLowerCase()));
-        terms.push(...tokens);
+        termsToHighlight.push(...tokens);
     }
-    return terms;
+
+    return highlightTerms(text, termsToHighlight);
 };
 
-// Build highlight terms from movement description for the invoice fields
-const getInvoiceHighlightTerms = (match: any): string[] => {
-    const terms: string[] = [];
-    const desc = (match.movement.descripcion || '').toUpperCase();
-    if (match.match_reasons.includes('rfc') && match.invoice.rfc && desc.includes(match.invoice.rfc.toUpperCase())) {
-        terms.push(match.invoice.rfc);
-    }
-    if (match.match_reasons.includes('uuid') && match.invoice.uuid) {
-        terms.push(match.invoice.uuid);
-    }
-    if (match.match_reasons.includes('nombre') && match.invoice.nombre) {
-        const stopWords = new Set(['de', 'del', 'la', 'las', 'los', 'el', 'en', 'con', 'por', 'para', 'sa', 'cv', 'sc', 'sas', 'srl']);
-        const tokens = match.invoice.nombre.split(/\s+/).filter((t: string) => t.length > 2 && !stopWords.has(t.toLowerCase()));
-        terms.push(...tokens);
-    }
-    return terms;
+// Highlight invoice name by finding name tokens that appear in the description
+const highlightInvoiceName = (name: string, match: any): string => {
+    if (!name || !match.match_reasons.includes('nombre')) return escapeHtml(name || '');
+    const stopWords = new Set(['de', 'del', 'la', 'las', 'los', 'el', 'en', 'con', 'por', 'para', 'sa', 'cv', 'sc', 'sas', 'srl']);
+    const tokens = name.split(/\s+/).filter((t: string) => t.length > 2 && !stopWords.has(t.toLowerCase()));
+    return highlightTerms(name, tokens);
 };
 
 const reasonLabels: Record<string, string> = {
@@ -230,9 +248,21 @@ const date = (dateString: string) => {
                                             >
                                         </td>
                                         <td class="p-4">
-                                            <div class="font-medium text-gray-900 dark:text-gray-100" v-html="match.match_reasons.includes('nombre') ? highlightTerms(match.invoice.nombre || match.invoice.rfc, getInvoiceHighlightTerms(match)) : escapeHtml(match.invoice.nombre || match.invoice.rfc)"></div>
-                                            <div class="text-xs text-gray-500 dark:text-gray-400" v-html="match.match_reasons.includes('uuid') ? highlightTerms(match.invoice.uuid, [match.invoice.uuid]) : escapeHtml(match.invoice.uuid)"></div>
-                                            <div v-if="match.invoice.rfc" class="text-xs text-gray-500 dark:text-gray-400 mt-0.5" v-html="match.match_reasons.includes('rfc') ? highlightTerms(match.invoice.rfc, [match.invoice.rfc]) : escapeHtml(match.invoice.rfc)"></div>
+                                            <div class="font-medium text-gray-900 dark:text-gray-100" v-html="highlightInvoiceName(match.invoice.nombre || match.invoice.rfc, match)"></div>
+                                            <div class="text-xs mt-0.5">
+                                                <span
+                                                    v-if="match.match_reasons.includes('uuid')"
+                                                    style="background-color:#bbf7d0;color:#14532d;border-radius:2px;padding:0 2px;font-weight:600;"
+                                                >{{ match.invoice.uuid }}</span>
+                                                <span v-else class="text-gray-500 dark:text-gray-400">{{ match.invoice.uuid }}</span>
+                                            </div>
+                                            <div v-if="match.invoice.rfc" class="text-xs mt-0.5">
+                                                <span
+                                                    v-if="match.match_reasons.includes('rfc')"
+                                                    style="background-color:#bbf7d0;color:#14532d;border-radius:2px;padding:0 2px;font-weight:600;"
+                                                >{{ match.invoice.rfc }}</span>
+                                                <span v-else class="text-gray-500 dark:text-gray-400">{{ match.invoice.rfc }}</span>
+                                            </div>
                                             <div class="flex justify-between items-center mt-1">
                                                 <div class="flex items-center gap-1.5">
                                                     <span class="text-xs bg-gray-100 px-2 py-0.5 rounded text-gray-600 dark:bg-gray-700 dark:text-gray-300">{{ date(match.invoice.fecha_emision) }}</span>
@@ -253,7 +283,7 @@ const date = (dateString: string) => {
                                             </div>
                                         </td>
                                         <td class="p-4 border-l border-gray-100 dark:border-gray-700">
-                                            <div class="font-medium text-gray-900 dark:text-gray-100 break-words text-sm leading-tight" v-html="highlightTerms(match.movement.descripcion, getMovementHighlightTerms(match))"></div>
+                                            <div class="font-medium text-gray-900 dark:text-gray-100 break-words text-sm leading-tight" v-html="highlightDescription(match.movement.descripcion, match)"></div>
                                             <div class="text-xs text-gray-500 dark:text-gray-400">{{ match.movement.referencia || 'Sin Referencia' }}</div>
                                             <div class="flex justify-between items-center mt-1">
                                                 <span class="text-xs bg-gray-100 px-2 py-0.5 rounded text-gray-600 dark:bg-gray-700 dark:text-gray-300">{{ date(match.movement.fecha) }}</span>
