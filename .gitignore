@@ -22,3 +22,7 @@
 Homestead.json
 Homestead.yaml
 Thumbs.db
+
+# Claude Code — personal/local settings (do not share)
+.claude/settings.local.json
+*.local.json

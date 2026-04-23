@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "description": "Shared Claude Code settings for the Conciliación Bancaria project. Personal overrides go in settings.local.json (git-ignored).",
+  "permissions": {
+    "allow": [
+      "Bash(./vendor/bin/sail up -d)",
+      "Bash(./vendor/bin/sail down)",
+      "Bash(./vendor/bin/sail ps)",
+      "Bash(./vendor/bin/sail logs:*)",
+      "Bash(./vendor/bin/sail artisan:*)",
+      "Bash(./vendor/bin/sail composer:*)",
+      "Bash(./vendor/bin/sail npm:*)",
+      "Bash(./vendor/bin/sail test:*)",
+      "Bash(./vendor/bin/sail bin:*)",
+      "Bash(./vendor/bin/sail exec:*)",
+      "Bash(./vendor/bin/sail php:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git fetch:*)",
+      "Bash(grep:*)"
+    ]
+  }
+}
