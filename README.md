@@ -2,7 +2,8 @@
 
 Aplicación para la conciliación de facturas XML (CFDI) con movimientos bancarios (estados de cuenta), con soporte multiempresa.
 
-> Documentación técnica completa: [docs/SOURCE_OF_TRUTH.md](docs/SOURCE_OF_TRUTH.md)
+> Documentación técnica completa: [docs/INDEX.md](docs/INDEX.md)
+> Reglas para agentes IA: [CLAUDE.md](CLAUDE.md) y [AGENTS.md](AGENTS.md)
 
 ---
 

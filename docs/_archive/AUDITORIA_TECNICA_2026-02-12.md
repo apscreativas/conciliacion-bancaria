@@ -1,3 +1,15 @@
+> ⚠️ **SUPERSEDED / HISTÓRICO**
+>
+> Esta auditoría es una foto de Febrero 2026. Los hallazgos **A#1 (Matcher N-M)** y **A#2 (Uploads síncronos)** ya están resueltos en el código actual:
+> - `MatcherService::reconcile` implementa el algoritmo de saldo restante con `lockForUpdate` y `epsilon=0.001` (`app/Services/Reconciliation/MatcherService.php:166-251`).
+> - Uploads usan flujo híbrido sync+async vía `FileUploadController` + `ProcessXmlUpload`/`ProcessBankStatement` sobre la cola `imports`.
+>
+> El hallazgo **#5 (Tailwind v3+v4)** sigue vigente — ver `docs/decisions/0005-tailwind-version-pendiente.md`.
+>
+> Estado actual del sistema: `docs/INDEX.md`. Este archivo queda como referencia histórica — **no editar**.
+
+---
+
 # Reporte de Auditoría Técnica (Deep Audit)
 
 **Fecha:** 12 de Febrero de 2026  

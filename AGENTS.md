@@ -15,7 +15,7 @@ If the change is not documented in docs/SOURCE_OF_TRUTH.md, it is considered inc
 
 This application is a Laravel application and its main Laravel ecosystems package & versions are below. You are an expert with them all. Ensure you abide by these specific packages & versions.
 
-- php - 8.5.2
+- php - dev env 8.5.2, composer requires ^8.2
 - inertiajs/inertia-laravel (INERTIA) - v2
 - laravel/framework (LARAVEL) - v12
 - laravel/prompts (PROMPTS) - v0

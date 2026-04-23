@@ -1,3 +1,15 @@
+> ⚠️ **SUPERSEDED / HISTÓRICO**
+>
+> Esta versión (v2, Feb 2026) fue reemplazada por el conjunto modular en `docs/` — ver `docs/INDEX.md`.
+>
+> Gaps conocidos de esta versión:
+> - Falta encabezado de la sección 3 (frontend) — contenido roto.
+> - Omite `TeamOwned` global scope, middleware `SetGlobalDateFilters`, commands artisan, flujo async de exports, rechazo PPD, Complemento de Pago, flag `confirm_multi_rfc`, batch-destroy endpoints, i18n.
+>
+> **No editar** — archivo histórico.
+
+---
+
 # Fuente de Verdad Técnica (Source of Truth)
 
 **Última Auditoría:** 12 Febrero 2026  
