@@ -67,6 +67,10 @@ Route::middleware('auth')->group(function () {
     Route::resource('bank-formats', \App\Http\Controllers\BankFormatController::class);
     Route::post('/bank-formats/preview', [\App\Http\Controllers\BankFormatController::class, 'preview'])->name('bank-formats.preview');
     Route::get('/api/bank-formats', [\App\Http\Controllers\BankFormatController::class, 'list'])->name('bank-formats.list');
+
+    // Finanzas — Fase 0: dimensión empresa + catálogo de categorías (solo owner del team)
+    Route::resource('settings/empresas', \App\Http\Controllers\EmpresaController::class)->names('settings.empresas')->except('show');
+    Route::resource('settings/categorias', \App\Http\Controllers\CategoriaController::class)->names('settings.categorias')->except('show');
 });
 
 require __DIR__.'/auth.php';

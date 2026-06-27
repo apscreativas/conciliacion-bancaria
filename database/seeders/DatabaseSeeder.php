@@ -7,7 +7,6 @@ use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
 
-
 class DatabaseSeeder extends Seeder
 {
     use WithoutModelEvents;
@@ -34,5 +33,8 @@ class DatabaseSeeder extends Seeder
         $user->forceFill([
             'current_team_id' => $team->id,
         ])->save();
+
+        // Fase 0 (PRD finanzas): empresas + catálogo de categorías por team (idempotente).
+        $this->call(FinanzasCatalogoSeeder::class);
     }
 }

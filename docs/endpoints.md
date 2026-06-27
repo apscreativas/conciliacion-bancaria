@@ -183,6 +183,29 @@ Ver `flows/export.md` para detalle.
 
 ---
 
+## Settings — Empresas y Categorías (Finanzas Fase 0)
+
+Resource routes (`->except('show')`). **Autorización:** `index` visible a cualquier miembro del team; `create/store/edit/update/destroy` solo para el **owner del team** (`user_id === currentTeam->user_id`, igual que Tolerance). El `index` oculta acciones de edición a no-owners; el sidebar solo muestra los links al owner.
+
+| Método | URI | Controller@action | Nombre | Tipo respuesta |
+|---|---|---|---|---|
+| GET | `/settings/empresas` | `EmpresaController@index` | `settings.empresas.index` | Inertia `Settings/Empresas/Index` |
+| GET | `/settings/empresas/create` | `EmpresaController@create` | `settings.empresas.create` | Inertia `Settings/Empresas/Create` |
+| POST | `/settings/empresas` | `EmpresaController@store` | `settings.empresas.store` | Redirect |
+| GET | `/settings/empresas/{empresa}/edit` | `EmpresaController@edit` | `settings.empresas.edit` | Inertia `Settings/Empresas/Create` con `empresa` |
+| PUT/PATCH | `/settings/empresas/{empresa}` | `EmpresaController@update` | `settings.empresas.update` | Redirect |
+| DELETE | `/settings/empresas/{empresa}` | `EmpresaController@destroy` | `settings.empresas.destroy` | Redirect |
+| GET | `/settings/categorias` | `CategoriaController@index` | `settings.categorias.index` | Inertia `Settings/Categorias/Index` |
+| GET | `/settings/categorias/create` | `CategoriaController@create` | `settings.categorias.create` | Inertia `Settings/Categorias/Create` |
+| POST | `/settings/categorias` | `CategoriaController@store` | `settings.categorias.store` | Redirect |
+| GET | `/settings/categorias/{categoria}/edit` | `CategoriaController@edit` | `settings.categorias.edit` | Inertia `Settings/Categorias/Create` con `categoria` |
+| PUT/PATCH | `/settings/categorias/{categoria}` | `CategoriaController@update` | `settings.categorias.update` | Redirect |
+| DELETE | `/settings/categorias/{categoria}` | `CategoriaController@destroy` | `settings.categorias.destroy` | Redirect |
+
+Acceso a un registro de otro team → **404** (global scope `TeamOwned` en el route-model binding). Acción de mutación por un miembro no-owner → **403**.
+
+---
+
 ## Health check
 
 | Método | URI | Nombre |

@@ -324,6 +324,30 @@ onMounted(() => {
                         </template>
                         {{ $t('Tolerancia') }}
                     </SidebarLink>
+                    <SidebarLink
+                        v-if="$page.props.auth.user.current_team && $page.props.auth.user.current_team.user_id === $page.props.auth.user.id"
+                        :href="route('settings.empresas.index')"
+                        :active="route().current('settings.empresas.*')"
+                    >
+                        <template #icon>
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0H5m14 0h2M5 21H3m4-4h.01M9 9h.01M9 13h.01M13 13h.01M13 9h.01" />
+                            </svg>
+                        </template>
+                        {{ $t('Empresas') }}
+                    </SidebarLink>
+                    <SidebarLink
+                        v-if="$page.props.auth.user.current_team && $page.props.auth.user.current_team.user_id === $page.props.auth.user.id"
+                        :href="route('settings.categorias.index')"
+                        :active="route().current('settings.categorias.*')"
+                    >
+                        <template #icon>
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5a1.99 1.99 0 011.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.99 1.99 0 013 12V7a4 4 0 014-4z" />
+                            </svg>
+                        </template>
+                        {{ $t('Categorías') }}
+                    </SidebarLink>
                 </div>
             </nav>
 
