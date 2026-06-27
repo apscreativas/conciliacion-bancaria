@@ -185,24 +185,26 @@ Ver `flows/export.md` para detalle.
 
 ## Settings — Empresas y Categorías (Finanzas Fase 0)
 
-Resource routes (`->except('show')`). **Autorización:** `index` visible a cualquier miembro del team; `create/store/edit/update/destroy` solo para el **owner del team** (`user_id === currentTeam->user_id`, igual que Tolerance). El `index` oculta acciones de edición a no-owners; el sidebar solo muestra los links al owner.
+Resource routes (`->except('show')`). Modelos/columnas en español (`Empresa`, `Categoria`), pero **rutas y Vue pages en inglés** (convención CLAUDE.md §5.2): `companies` / `categories`.
+
+**Autorización vía Policy** (`EmpresaPolicy`, `CategoriaPolicy`, auto-descubiertas): `viewAny` → cualquier miembro del team; `create/update/delete` → solo **owner del team** (`User::ownsTeam`). Los controllers llaman `$this->authorize(...)`; los `EmpresaRequest`/`CategoriaRequest` (FormRequests) hacen la validación. El sidebar y el `index` ocultan acciones a no-owners.
 
 | Método | URI | Controller@action | Nombre | Tipo respuesta |
 |---|---|---|---|---|
-| GET | `/settings/empresas` | `EmpresaController@index` | `settings.empresas.index` | Inertia `Settings/Empresas/Index` |
-| GET | `/settings/empresas/create` | `EmpresaController@create` | `settings.empresas.create` | Inertia `Settings/Empresas/Create` |
-| POST | `/settings/empresas` | `EmpresaController@store` | `settings.empresas.store` | Redirect |
-| GET | `/settings/empresas/{empresa}/edit` | `EmpresaController@edit` | `settings.empresas.edit` | Inertia `Settings/Empresas/Create` con `empresa` |
-| PUT/PATCH | `/settings/empresas/{empresa}` | `EmpresaController@update` | `settings.empresas.update` | Redirect |
-| DELETE | `/settings/empresas/{empresa}` | `EmpresaController@destroy` | `settings.empresas.destroy` | Redirect |
-| GET | `/settings/categorias` | `CategoriaController@index` | `settings.categorias.index` | Inertia `Settings/Categorias/Index` |
-| GET | `/settings/categorias/create` | `CategoriaController@create` | `settings.categorias.create` | Inertia `Settings/Categorias/Create` |
-| POST | `/settings/categorias` | `CategoriaController@store` | `settings.categorias.store` | Redirect |
-| GET | `/settings/categorias/{categoria}/edit` | `CategoriaController@edit` | `settings.categorias.edit` | Inertia `Settings/Categorias/Create` con `categoria` |
-| PUT/PATCH | `/settings/categorias/{categoria}` | `CategoriaController@update` | `settings.categorias.update` | Redirect |
-| DELETE | `/settings/categorias/{categoria}` | `CategoriaController@destroy` | `settings.categorias.destroy` | Redirect |
+| GET | `/settings/companies` | `EmpresaController@index` | `settings.companies.index` | Inertia `Settings/Companies/Index` |
+| GET | `/settings/companies/create` | `EmpresaController@create` | `settings.companies.create` | Inertia `Settings/Companies/Create` |
+| POST | `/settings/companies` | `EmpresaController@store` | `settings.companies.store` | Redirect |
+| GET | `/settings/companies/{company}/edit` | `EmpresaController@edit` | `settings.companies.edit` | Inertia `Settings/Companies/Create` con `empresa` |
+| PUT/PATCH | `/settings/companies/{company}` | `EmpresaController@update` | `settings.companies.update` | Redirect |
+| DELETE | `/settings/companies/{company}` | `EmpresaController@destroy` | `settings.companies.destroy` | Redirect |
+| GET | `/settings/categories` | `CategoriaController@index` | `settings.categories.index` | Inertia `Settings/Categories/Index` |
+| GET | `/settings/categories/create` | `CategoriaController@create` | `settings.categories.create` | Inertia `Settings/Categories/Create` |
+| POST | `/settings/categories` | `CategoriaController@store` | `settings.categories.store` | Redirect |
+| GET | `/settings/categories/{category}/edit` | `CategoriaController@edit` | `settings.categories.edit` | Inertia `Settings/Categories/Create` con `categoria` |
+| PUT/PATCH | `/settings/categories/{category}` | `CategoriaController@update` | `settings.categories.update` | Redirect |
+| DELETE | `/settings/categories/{category}` | `CategoriaController@destroy` | `settings.categories.destroy` | Redirect |
 
-Acceso a un registro de otro team → **404** (global scope `TeamOwned` en el route-model binding). Acción de mutación por un miembro no-owner → **403**.
+Acceso a un registro de otro team → **404** (global scope `TeamOwned` en el route-model binding). Mutación por un miembro no-owner → **403** (Policy). Validación: `nombre` único por team, **slug único por team** (evita 500 por colisión de slug derivado), y en categorías invariante `tipo`/`grupo`/`naturaleza` (ingreso ⇒ grupo `ingreso` sin naturaleza; egreso ⇒ grupo de egreso con naturaleza).
 
 ---
 

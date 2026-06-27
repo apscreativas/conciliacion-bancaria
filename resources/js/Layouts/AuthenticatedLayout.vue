@@ -326,8 +326,8 @@ onMounted(() => {
                     </SidebarLink>
                     <SidebarLink
                         v-if="$page.props.auth.user.current_team && $page.props.auth.user.current_team.user_id === $page.props.auth.user.id"
-                        :href="route('settings.empresas.index')"
-                        :active="route().current('settings.empresas.*')"
+                        :href="route('settings.companies.index')"
+                        :active="route().current('settings.companies.*')"
                     >
                         <template #icon>
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -338,8 +338,8 @@ onMounted(() => {
                     </SidebarLink>
                     <SidebarLink
                         v-if="$page.props.auth.user.current_team && $page.props.auth.user.current_team.user_id === $page.props.auth.user.id"
-                        :href="route('settings.categorias.index')"
-                        :active="route().current('settings.categorias.*')"
+                        :href="route('settings.categories.index')"
+                        :active="route().current('settings.categories.*')"
                     >
                         <template #icon>
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

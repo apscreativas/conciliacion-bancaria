@@ -31,9 +31,9 @@ const form = useForm({
 
 const submit = () => {
     if (isEdit.value) {
-        form.put(route("settings.empresas.update", props.empresa!.id));
+        form.put(route("settings.companies.update", props.empresa!.id));
     } else {
-        form.post(route("settings.empresas.store"));
+        form.post(route("settings.companies.store"));
     }
 };
 </script>
@@ -79,7 +79,7 @@ const submit = () => {
 
                             <div class="flex items-center gap-4">
                                 <PrimaryButton :disabled="form.processing">{{ $t('Guardar') }}</PrimaryButton>
-                                <Link :href="route('settings.empresas.index')">
+                                <Link :href="route('settings.companies.index')">
                                     <SecondaryButton type="button">{{ $t('Cancelar') }}</SecondaryButton>
                                 </Link>
                             </div>

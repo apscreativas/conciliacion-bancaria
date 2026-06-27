@@ -23,14 +23,14 @@ categorias: id, team_id(FK cascade), nombre,
 Ambos modelos: `use TeamOwned; use HasFactory;`, casts `activo=>boolean`, `orden=>integer`.
 
 ## 4. Endpoints / rutas
-Resource `->except('show')` bajo el grupo `auth`. Ver tabla completa en `docs/endpoints.md` → "Settings — Empresas y Categorías".
+Resource `->except('show')` bajo el grupo `auth`. **Rutas/Vue pages en inglés** (`companies`/`categories`, CLAUDE.md §5.2); modelos/columnas en español. Autorización vía Policy. Ver tabla completa en `docs/endpoints.md` → "Settings — Empresas y Categorías".
 
 | Método | Ruta | Controller | Notas |
 |---|---|---|---|
-| GET | `/settings/empresas` | `EmpresaController@index` | miembro del team |
-| POST/PUT/DELETE | `/settings/empresas...` | `EmpresaController` | **solo owner** (`ensureOwner` → 403) |
-| GET | `/settings/categorias` | `CategoriaController@index` | miembro del team |
-| POST/PUT/DELETE | `/settings/categorias...` | `CategoriaController` | **solo owner** |
+| GET | `/settings/companies` | `EmpresaController@index` | `viewAny` → miembro del team |
+| POST/PUT/DELETE | `/settings/companies...` | `EmpresaController` | `EmpresaPolicy` create/update/delete → **solo owner** (403) |
+| GET | `/settings/categories` | `CategoriaController@index` | `viewAny` → miembro del team |
+| POST/PUT/DELETE | `/settings/categories...` | `CategoriaController` | `CategoriaPolicy` → **solo owner** |
 
 ## 5. Archivos tocados
 1. `database/migrations/2026_06_26_000001_create_empresas_table.php`, `..._000002_create_categorias_table.php`
@@ -38,24 +38,27 @@ Resource `->except('show')` bajo el grupo `auth`. Ver tabla completa en `docs/en
 3. `database/factories/EmpresaFactory.php`, `CategoriaFactory.php`
 4. `database/seeders/FinanzasCatalogoSeeder.php` (+ registro en `DatabaseSeeder.php`)
 5. `app/Http/Controllers/EmpresaController.php`, `CategoriaController.php`
-6. `routes/web.php` (2 resources)
-7. `resources/js/Pages/Settings/{Empresas,Categorias}/{Index,Create}.vue`
-8. `resources/js/Layouts/AuthenticatedLayout.vue` (2 links, gated owner)
-9. `lang/es.json`, `lang/en.json`
-10. `tests/Feature/{EmpresaTest,CategoriaTest,FinanzasCatalogoSeederTest}.php`
+6. `app/Http/Requests/EmpresaRequest.php`, `CategoriaRequest.php` (validación reutilizada, CLAUDE.md §3.3)
+7. `app/Policies/EmpresaPolicy.php`, `CategoriaPolicy.php`, `app/Policies/Concerns/ChecksTeamOwnership.php` (autz owner, reusa `User::ownsTeam`)
+8. `routes/web.php` (2 resources)
+9. `resources/js/Pages/Settings/{Companies,Categories}/{Index,Create}.vue`
+10. `resources/js/Layouts/AuthenticatedLayout.vue` (2 links, gated owner)
+11. `lang/es.json`, `lang/en.json`
+12. `tests/Feature/{EmpresaTest,CategoriaTest,FinanzasCatalogoSeederTest}.php`
 
 ## 6. Reglas de negocio y casos borde
 - **Tenancy:** `TeamOwned` filtra por `current_team_id`; defense-in-depth `where('team_id', ...)` en `index`. Registro de otro team → 404 (route-model binding scopeado).
-- **Autorización:** mutaciones solo por owner del team (no hay sistema de roles; se replica `ToleranciaController`). No-owner → 403.
-- **Unicidad:** `nombre` único por team en ambas tablas (validación + índice). `slug` de empresa derivado de `Str::slug(nombre)`.
-- **`naturaleza` nullable:** ingresos quedan en `null`; solo egresos llevan fijo/variable.
+- **Autorización:** vía `EmpresaPolicy`/`CategoriaPolicy` (trait `ChecksTeamOwnership` → `User::ownsTeam`, con guard de `currentTeam` null). `viewAny` abierto a miembros; `create/update/delete` solo owner → 403.
+- **Unicidad:** `nombre` **y** `slug` únicos por team (ambos validados en `EmpresaRequest`). El slug se deriva de `Str::slug(nombre)` en `prepareForValidation`; validar su unicidad evita un 500 por el índice `unique(team_id, slug)` cuando dos nombres distintos producen el mismo slug. Nombre sin alfanuméricos (slug vacío) → 422.
+- **`naturaleza` nullable + invariante:** `CategoriaRequest::withValidator` exige ingreso ⇒ grupo `ingreso` y `naturaleza` null; egreso ⇒ grupo de egreso y `naturaleza` fijo/variable. El form Vue ajusta opciones según `tipo` para espejarlo.
+- **`activo`:** `prepareForValidation` lo castea a booleano (`$this->boolean`), evitando que un PUT sin el campo reactive el registro.
 - **Seeder idempotente:** `updateOrCreate` por `(team_id, slug)` / `(team_id, nombre)`; re-ejecutar no duplica (verificado: 3 empresas + 21 categorías estables).
 
 ## 7. Plan de pruebas
 - **Pest feature:** `EmpresaTest`, `CategoriaTest` — CRUD owner feliz, validación required/unique, enums inválidos.
 - **Tenancy:** acceso a registro de otro team → 404; mutación por miembro no-owner → 403.
 - **Seeder:** `FinanzasCatalogoSeederTest` — 3 empresas + catálogo por team; re-run no duplica.
-- Resultado: **8 passed (35 assertions)**. Suite completa: 65 passed / 13 failed (los 13 son baseline preexistente, 0 regresiones nuevas).
+- Resultado: **12 passed (47 assertions)** (incluye slug-colisión, slug vacío, invariante tipo/grupo/naturaleza, y 403 de categorías). Suite completa: 69 passed / 13 failed (los 13 son baseline preexistente, 0 regresiones nuevas).
 
 ## 8. Impacto en lo existente
 - ¿Tenancy/transacciones/colas/migraciones/contratos Inertia? Solo **migraciones nuevas** (aditivas) y **rutas/páginas nuevas**. No cambia props de páginas existentes.
@@ -64,9 +67,10 @@ Resource `->except('show')` bajo el grupo `auth`. Ver tabla completa en `docs/en
 ## 9. Riesgos y mitigaciones
 | Riesgo | Impacto | Mitigación |
 |---|---|---|
-| Colisión de `slug` entre nombres distintos | Violación unique(team,slug) | `nombre` único por team ya previene; slug derivado del nombre |
+| Colisión de `slug` entre nombres distintos | Violación unique(team,slug) → 500 | **Mitigado:** `EmpresaRequest` valida unicidad del slug derivado → 422 en vez de 500 (cubierto por test) |
+| Combinación incoherente tipo/grupo/naturaleza | P&L de fases futuras mal agrupado | **Mitigado:** invariante en `CategoriaRequest::withValidator` + form Vue que ajusta opciones |
 | Seeder corre sin teams (DB vacía) | No siembra nada | Esperado; siembra al existir un team. Idempotente al re-correr |
-| No-owner intenta mutar | Acceso indebido | `ensureOwner()` → 403 en todas las mutaciones; links ocultos en UI |
+| No-owner intenta mutar | Acceso indebido | `EmpresaPolicy`/`CategoriaPolicy` (`$this->authorize`) → 403 en create/update/delete; links ocultos en UI |
 
 ## 10. Definition of Done
 DoD §8 del PRD: **A** pruebas ✓ (8 nuevas verdes, 0 regresiones) · **B** docs ✓ (`domain.md`, `endpoints.md`, este SDD, PRD marcado) · **C** commit atómico en `feature/finanzas-fase0` (pendiente) · **D** gate financiero N/A en Fase 0 (no mueve dinero; motor intacto).

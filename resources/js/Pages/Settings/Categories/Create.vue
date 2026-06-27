@@ -6,7 +6,7 @@ import SecondaryButton from "@/Components/SecondaryButton.vue";
 import InputLabel from "@/Components/InputLabel.vue";
 import TextInput from "@/Components/TextInput.vue";
 import InputError from "@/Components/InputError.vue";
-import { computed } from "vue";
+import { computed, watch } from "vue";
 
 interface Categoria {
     id: number;
@@ -28,16 +28,40 @@ const form = useForm({
     nombre: props.categoria?.nombre ?? "",
     tipo: props.categoria?.tipo ?? "egreso",
     grupo: props.categoria?.grupo ?? "gasto_operativo",
-    naturaleza: props.categoria?.naturaleza ?? null,
+    naturaleza: props.categoria?.naturaleza ?? (props.categoria?.tipo === "ingreso" ? null : "fijo"),
     activo: props.categoria?.activo ?? true,
     orden: props.categoria?.orden ?? 0,
 });
 
+// Coherencia tipo ⇄ grupo/naturaleza (espeja la validación del servidor, PRD §4.2)
+const grupoOptions = computed(() =>
+    form.tipo === "ingreso"
+        ? [{ value: "ingreso", label: "Ingreso" }]
+        : [
+              { value: "costo_venta", label: "Costo de venta" },
+              { value: "gasto_operativo", label: "Gasto operativo" },
+              { value: "abajo_ebitda", label: "Abajo de EBITDA" },
+          ],
+);
+
+watch(
+    () => form.tipo,
+    (tipo) => {
+        if (tipo === "ingreso") {
+            form.grupo = "ingreso";
+            form.naturaleza = null;
+        } else {
+            if (form.grupo === "ingreso") form.grupo = "gasto_operativo";
+            if (!form.naturaleza) form.naturaleza = "fijo";
+        }
+    },
+);
+
 const submit = () => {
     if (isEdit.value) {
-        form.put(route("settings.categorias.update", props.categoria!.id));
+        form.put(route("settings.categories.update", props.categoria!.id));
     } else {
-        form.post(route("settings.categorias.store"));
+        form.post(route("settings.categories.store"));
     }
 };
 </script>
@@ -75,20 +99,19 @@ const submit = () => {
                             <div>
                                 <InputLabel for="grupo" :value="$t('Grupo')" />
                                 <select id="grupo" v-model="form.grupo" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                                    <option value="ingreso">{{ $t('Ingreso') }}</option>
-                                    <option value="costo_venta">{{ $t('Costo de venta') }}</option>
-                                    <option value="gasto_operativo">{{ $t('Gasto operativo') }}</option>
-                                    <option value="abajo_ebitda">{{ $t('Abajo de EBITDA') }}</option>
+                                    <option v-for="opt in grupoOptions" :key="opt.value" :value="opt.value">{{ $t(opt.label) }}</option>
                                 </select>
                                 <InputError class="mt-2" :message="form.errors.grupo" />
                             </div>
 
                             <div>
                                 <InputLabel for="naturaleza" :value="$t('Naturaleza')" />
-                                <select id="naturaleza" v-model="form.naturaleza" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                                    <option :value="null">{{ $t('No aplica') }}</option>
-                                    <option value="fijo">{{ $t('Fijo') }}</option>
-                                    <option value="variable">{{ $t('Variable') }}</option>
+                                <select id="naturaleza" v-model="form.naturaleza" :disabled="form.tipo === 'ingreso'" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 disabled:opacity-50">
+                                    <option v-if="form.tipo === 'ingreso'" :value="null">{{ $t('No aplica') }}</option>
+                                    <template v-else>
+                                        <option value="fijo">{{ $t('Fijo') }}</option>
+                                        <option value="variable">{{ $t('Variable') }}</option>
+                                    </template>
                                 </select>
                                 <InputError class="mt-2" :message="form.errors.naturaleza" />
                             </div>
@@ -107,7 +130,7 @@ const submit = () => {
 
                             <div class="flex items-center gap-4">
                                 <PrimaryButton :disabled="form.processing">{{ $t('Guardar') }}</PrimaryButton>
-                                <Link :href="route('settings.categorias.index')">
+                                <Link :href="route('settings.categories.index')">
                                     <SecondaryButton type="button">{{ $t('Cancelar') }}</SecondaryButton>
                                 </Link>
                             </div>
