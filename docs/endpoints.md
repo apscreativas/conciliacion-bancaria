@@ -159,6 +159,27 @@ Ver `flows/export.md` para detalle.
 
 ---
 
+## Egresos (Finanzas Fase 2)
+
+Resource `->except('show')`. Modelo/tabla en español (`Egreso`/`egresos`); **rutas y Vue pages en inglés** (`expenses`/`Expenses`). **Acceso: cualquier miembro del team** (captura operativa; sin owner-gate). Tenancy por `TeamOwned` (registro de otro team → 404 vía route-model binding). Validación en `EgresoRequest`: `categoria_id` requerida + `exists` scoped (team **y `tipo=egreso`**), `monto` > 0, `empresa_id` opcional + `exists` scoped.
+
+| Método | URI | Controller@action | Nombre | Tipo respuesta |
+|---|---|---|---|---|
+| GET | `/expenses` | `EgresoController@index` | `expenses.index` | Inertia `Expenses/Index` (props: `egresos` paginator, `empresas`, `categorias`, `total`, `totalsByCategoria`, `filters`) |
+| GET | `/expenses/create` | `EgresoController@create` | `expenses.create` | Inertia `Expenses/Create` |
+| POST | `/expenses` | `EgresoController@store` | `expenses.store` | Redirect (set `user_id`, `origen='manual'`) |
+| GET | `/expenses/{expense}/edit` | `EgresoController@edit` | `expenses.edit` | Inertia `Expenses/Create` con `egreso` |
+| PUT/PATCH | `/expenses/{expense}` | `EgresoController@update` | `expenses.update` | Redirect |
+| DELETE | `/expenses/{expense}` | `EgresoController@destroy` | `expenses.destroy` | Redirect |
+
+### Filtros soportados en `/expenses`
+- `empresa_id`, `categoria_id` (single-select)
+- `date_from`, `date_to` (sobre `egresos.fecha`); fallback `month`/`year` (`SetGlobalDateFilters`)
+- `amount_min`, `amount_max`; `per_page`
+- Totales (`total` + `totalsByCategoria`) calculados sobre el conjunto filtrado.
+
+---
+
 ## Settings — Tolerance
 
 | Método | URI | Controller@action | Nombre | Autorización |

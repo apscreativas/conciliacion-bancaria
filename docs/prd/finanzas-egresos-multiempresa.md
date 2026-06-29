@@ -247,7 +247,8 @@ Cada fase es entregable, probable y no rompe lo anterior. Orden = dependencias.
 - **Criterios:** asignar/reasignar empresa a un grupo; conciliaciones existentes quedan en "sin asignar" sin romperse; ownership validado; test que confirma que el `MatcherService` no cambió (correr `MatcherServiceTest`, `RegressionTest`).
 - **Riesgo/tenancy:** medio (toca tabla del dominio). `empresa_id` nullable, aditivo. No tocar lógica de matching.
 
-### Fase 2 — Egresos manuales
+### Fase 2 — Egresos manuales  ✅ CERRADA (2026-06-29)
+> Implementada en `feature/finanzas-fase2`. SDD: `docs/sdd/02-egresos-manuales.md`. Tabla `egresos` + CRUD `/expenses` (índice filtrado mes/año/empresa/categoría + totales), acceso para cualquier miembro del team, `categoria_id` requerida tipo=egreso, `monto>0`. Diferido a Fase 3: `egreso_recurrente_id`. 6 tests verdes, 0 regresiones; aislado del motor.
 - **Objetivo:** capturar gastos uno por uno, clasificados por empresa + categoría.
 - **Alcance:** migración `egresos`; modelo + `TeamOwned`; CRUD `/expenses` (index con filtros mes/año/empresa/categoría, create, edit, delete); validación (monto > 0, categoría tipo=egreso, empresa del team); factory + tests.
 - **Criterios:** alta/edición/baja de egresos; filtros funcionan; totales por categoría; tenancy test.

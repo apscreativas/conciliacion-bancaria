@@ -60,6 +60,9 @@ Route::middleware('auth')->group(function () {
     Route::post('/invoices/batch-destroy', [App\Http\Controllers\FacturaController::class, 'batchDestroy'])->name('invoices.batch-destroy');
     Route::delete('/invoices/{file}', [App\Http\Controllers\FacturaController::class, 'destroy'])->name('invoices.destroy');
 
+    // Egresos — Finanzas Fase 2 (captura manual de gastos)
+    Route::resource('expenses', \App\Http\Controllers\EgresoController::class)->except('show');
+
     // Settings Routes
     Route::get('/settings/tolerance', [App\Http\Controllers\ToleranciaController::class, 'edit'])->name('settings.tolerance');
     Route::post('/settings/tolerance', [App\Http\Controllers\ToleranciaController::class, 'update'])->name('settings.tolerance.update');
