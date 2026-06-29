@@ -147,3 +147,42 @@ it('returns 404 when assigning to a group from another team', function () {
         'empresa_id' => null,
     ])->assertNotFound();
 });
+
+it('is idempotent: re-assigning the same empresa does not 404 (MySQL changed-rows guard)', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $empresa = Empresa::create(['team_id' => $team->id, 'nombre' => 'TC', 'slug' => 'tc']);
+    $groupId = makeReconciledGroup($user, $team);
+
+    actingAs($user)->patch(route('reconciliation.group.empresa.update', $groupId), ['empresa_id' => $empresa->id])->assertRedirect();
+    // Misma empresa otra vez → 0 filas CAMBIADAS en MySQL, pero el grupo existe → debe seguir OK.
+    actingAs($user)->patch(route('reconciliation.group.empresa.update', $groupId), ['empresa_id' => $empresa->id])
+        ->assertRedirect()
+        ->assertSessionHasNoErrors();
+});
+
+it('unassigning an already-unassigned group succeeds (no false 404)', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $groupId = makeReconciledGroup($user, $team); // empresa_id arranca null
+
+    actingAs($user)->patch(route('reconciliation.group.empresa.update', $groupId), ['empresa_id' => null])
+        ->assertRedirect()
+        ->assertSessionHasNoErrors();
+});
+
+it('requires the empresa_id key to be present (empty payload does not silently unassign)', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $empresa = Empresa::create(['team_id' => $team->id, 'nombre' => 'X', 'slug' => 'x']);
+    $groupId = makeReconciledGroup($user, $team);
+
+    actingAs($user)->patch(route('reconciliation.group.empresa.update', $groupId), ['empresa_id' => $empresa->id])->assertRedirect();
+
+    // PATCH sin la clave empresa_id → 422 (no des-asigna en silencio)
+    actingAs($user)->patch(route('reconciliation.group.empresa.update', $groupId), [])
+        ->assertSessionHasErrors('empresa_id');
+
+    expect(Conciliacion::withoutGlobalScopes()->where('group_id', $groupId)->whereNotNull('empresa_id')->count())
+        ->toBeGreaterThan(0);
+});

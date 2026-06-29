@@ -653,25 +653,31 @@ class ReconciliationController extends Controller
      * Asigna (o des-asigna con null) la empresa de un grupo conciliado, a nivel group_id.
      * Aditivo: NO toca el motor de matching ni montos. Espeja destroyGroup en tenancy.
      */
-    public function updateGroupEmpresa(Request $request, $groupId)
+    public function updateGroupEmpresa(Request $request, $groupId): \Illuminate\Http\RedirectResponse
     {
         $teamId = auth()->user()->current_team_id;
 
         $validated = $request->validate([
+            // 'present': el payload DEBE traer la clave (aunque sea null) — evita que un
+            // PATCH sin el campo des-asigne el grupo en silencio.
             'empresa_id' => [
+                'present',
                 'nullable',
                 Rule::exists('empresas', 'id')->where(fn ($q) => $q->where('team_id', $teamId)),
             ],
         ]);
 
         // Scope al team actual; opera sobre todas las filas del grupo.
-        $updated = Conciliacion::where('group_id', $groupId)
-            ->where('team_id', $teamId)
-            ->update(['empresa_id' => $validated['empresa_id'] ?? null]);
+        $query = Conciliacion::where('group_id', $groupId)->where('team_id', $teamId);
 
-        if ($updated === 0) {
+        // Existencia por separado: en MySQL update() devuelve filas CAMBIADAS, así que
+        // re-asignar la misma empresa (o des-asignar un grupo ya vacío) afectaría 0 filas
+        // y daría un 404 falso. Verificamos existencia antes de actualizar (idempotente).
+        if (! $query->clone()->exists()) {
             abort(404);
         }
+
+        $query->update(['empresa_id' => $validated['empresa_id']]);
 
         return back()->with('success', 'Empresa asignada al grupo exitosamente.');
     }

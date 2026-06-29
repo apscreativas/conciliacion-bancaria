@@ -36,7 +36,9 @@ Además, `history()` añade `empresa` al eager-load y al grupo transformado, y p
 ## 6. Reglas de negocio y casos borde
 - **A nivel grupo:** la asignación actualiza **todas** las filas del `group_id` (un grupo N-M tiene varias filas `conciliacions`). Verificado con grupo multi-fila (1 factura, 2 movimientos).
 - **Tenancy:** scope `team_id` en el UPDATE (como `destroyGroup`). Grupo de otro team → **404**. `empresa_id` de otro team → **422** (`exists` scoped por team). Cualquier miembro del team puede asignar (tarea operativa, no owner-gate — consistente con conciliar/desvincular).
-- **Des-asignar:** `empresa_id = null` permitido (vuelve a "sin asignar").
+- **Des-asignar:** `empresa_id = null` permitido (vuelve a "sin asignar"). La clave `empresa_id` debe venir en el payload (`present`): un PATCH sin el campo da 422, no des-asigna en silencio.
+- **Idempotencia (MySQL):** `update()` en MySQL devuelve filas **cambiadas**, no coincidentes; por eso la existencia del grupo se verifica con `->exists()` antes de actualizar (re-asignar la misma empresa o des-asignar un grupo ya vacío NO da un 404 falso).
+- **Empresa inactiva:** el dropdown del card incluye la empresa actual del grupo aunque esté inactiva (computed `empresaOptions`), para que badge y selector nunca se contradigan.
 - **Borrado de empresa:** `nullOnDelete` → la conciliación sobrevive con `empresa_id = null`; **nunca** se borra un registro financiero.
 - **No-tocar-matcher:** `empresa_id` se asigna **post-conciliación**; `MatcherService::reconcile()` ni lo conoce. El UPDATE no altera `monto_aplicado`, `group_id`, ni el conteo de filas.
 
@@ -47,7 +49,8 @@ Además, `history()` añade `empresa` al eager-load y al grupo transformado, y p
   - **gate financiero:** `monto_aplicado` total y conteo de filas **idénticos** antes/después de asignar.
   - empresa de otro team → 422; group_id de otro team → 404.
 - **No-regresión del motor:** `MatcherServiceTest`, `RegressionTest`, `ReconciliationTenancyTest` → 0 fallos nuevos vs baseline.
-- Resultado: **5 passed (18 assertions)**. Suite completa: **76 passed / 13 failed** (los 13 son baseline preexistente; 0 regresiones nuevas).
+- **Casos de code review:** idempotencia (re-asignar misma empresa → no 404), des-asignar grupo ya vacío → no 404, y `present` (payload sin la clave → 422).
+- Resultado: **8 passed (30 assertions)**. Suite completa: **79 passed / 13 failed** (los 13 son baseline preexistente; 0 regresiones nuevas).
 
 ## 8. Impacto en lo existente
 - **Migración** aditiva nullable (no rompe filas existentes). **Contrato Inertia de History** extendido (props nuevas `empresa` por grupo y `empresas`) — aditivo, no hay test que verifique el shape previo.

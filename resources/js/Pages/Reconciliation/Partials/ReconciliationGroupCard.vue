@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { router } from "@inertiajs/vue3";
+import { computed } from "vue";
 
 interface Empresa {
     id: number;
@@ -23,6 +24,22 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits(["unreconcile"]);
+
+// Estilo de chip de color con opacidad (fondo 15, borde 30). Reusado por todos los badges.
+const badgeStyle = (color: string | null) => {
+    const c = color || "#9ca3af";
+    return { backgroundColor: c + "15", color: c, borderColor: c + "30" };
+};
+
+// La empresa activa actual del grupo puede estar inactiva (y por tanto fuera de `empresas`);
+// la incluimos en las opciones para que el <select> siempre refleje el valor real.
+const empresaOptions = computed<Empresa[]>(() => {
+    const current = props.group.empresa;
+    if (current && !props.empresas.some((e) => e.id === current.id)) {
+        return [current, ...props.empresas];
+    }
+    return props.empresas;
+});
 
 const assignEmpresa = (event: Event) => {
     const value = (event.target as HTMLSelectElement).value;
@@ -79,11 +96,7 @@ const getDifference = (group: any) => {
                     <span
                         v-if="group.empresa"
                         class="text-[10px] font-bold px-2 py-0.5 rounded border inline-block w-fit"
-                        :style="{
-                            backgroundColor: (group.empresa.color || '#9ca3af') + '15',
-                            color: group.empresa.color || '#9ca3af',
-                            borderColor: (group.empresa.color || '#9ca3af') + '30',
-                        }"
+                        :style="badgeStyle(group.empresa.color)"
                     >
                         {{ group.empresa.nombre }}
                     </span>
@@ -94,7 +107,7 @@ const getDifference = (group: any) => {
                         class="text-xs border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-1"
                     >
                         <option value="">{{ $t("Sin asignar") }}</option>
-                        <option v-for="e in empresas" :key="e.id" :value="e.id">
+                        <option v-for="e in empresaOptions" :key="e.id" :value="e.id">
                             {{ e.nombre }}
                         </option>
                     </select>
@@ -212,15 +225,7 @@ const getDifference = (group: any) => {
                             <div
                                 v-if="movement.archivo?.bank_format"
                                 class="text-[10px] font-bold px-1.5 py-0.5 rounded border inline-block w-fit mb-1"
-                                :style="{
-                                    backgroundColor:
-                                        movement.archivo.bank_format.color +
-                                        '15',
-                                    color: movement.archivo.bank_format.color,
-                                    borderColor:
-                                        movement.archivo.bank_format.color +
-                                        '30',
-                                }"
+                                :style="badgeStyle(movement.archivo.bank_format.color)"
                             >
                                 {{ movement.archivo.bank_format.name }}
                             </div>
