@@ -88,9 +88,14 @@ const destroy = () => {
         <template #header>
             <div class="flex justify-between items-center">
                 <h2 class="font-semibold text-xl text-gray-800 dark:text-gray-200 leading-tight">{{ $t("Egresos") }}</h2>
-                <Link :href="route('expenses.create')">
-                    <PrimaryButton>{{ $t("Nuevo Egreso") }}</PrimaryButton>
-                </Link>
+                <div class="flex items-center gap-3">
+                    <Link :href="route('recurring-expenses.index')">
+                        <SecondaryButton>{{ $t("Gastos recurrentes") }}</SecondaryButton>
+                    </Link>
+                    <Link :href="route('expenses.create')">
+                        <PrimaryButton>{{ $t("Nuevo Egreso") }}</PrimaryButton>
+                    </Link>
+                </div>
             </div>
         </template>
 

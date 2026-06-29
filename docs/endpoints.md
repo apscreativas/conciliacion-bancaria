@@ -180,6 +180,23 @@ Resource `->except('show')`. Modelo/tabla en español (`Egreso`/`egresos`); **ru
 
 ---
 
+## Egresos recurrentes (Finanzas Fase 3)
+
+Resource `recurring-expenses` `->except('show')`. CRUD de **plantillas** que el comando `egresos:generar-recurrentes` materializa en egresos. **Acceso: cualquier miembro del team** (tenancy `TeamOwned` + `ensureOwnTeam`). `store` computa `proxima_generacion` (primera ocurrencia); `update` la recomputa solo si `pagos_generados==0`. Validación en `EgresoRecurrenteRequest` (`categoria_id` requerida tipo=egreso, `monto`>0, `frecuencia` ∈ mensual/bimestral/trimestral/anual — **no quincenal**, reglas condicionales de vigencia).
+
+| Método | URI | Controller@action | Nombre | Tipo respuesta |
+|---|---|---|---|---|
+| GET | `/recurring-expenses` | `EgresoRecurrenteController@index` | `recurring-expenses.index` | Inertia `RecurringExpenses/Index` (`plantillas`, `empresas`, `categorias`) |
+| GET | `/recurring-expenses/create` | `@create` | `recurring-expenses.create` | Inertia `RecurringExpenses/Create` |
+| POST | `/recurring-expenses` | `@store` | `recurring-expenses.store` | Redirect |
+| GET | `/recurring-expenses/{recurring_expense}/edit` | `@edit` | `recurring-expenses.edit` | Inertia `RecurringExpenses/Create` con `plantilla` |
+| PUT/PATCH | `/recurring-expenses/{recurring_expense}` | `@update` | `recurring-expenses.update` | Redirect |
+| DELETE | `/recurring-expenses/{recurring_expense}` | `@destroy` | `recurring-expenses.destroy` | Redirect (los egresos generados se conservan) |
+
+Comando + schedule documentados en `docs/operations.md` (sección Scheduler).
+
+---
+
 ## Settings — Tolerance
 
 | Método | URI | Controller@action | Nombre | Autorización |

@@ -254,7 +254,8 @@ Cada fase es entregable, probable y no rompe lo anterior. Orden = dependencias.
 - **Criterios:** alta/edición/baja de egresos; filtros funcionan; totales por categoría; tenancy test.
 - **Riesgo:** bajo. Aislado del motor.
 
-### Fase 3 — Egresos recurrentes (motor)
+### Fase 3 — Egresos recurrentes (motor)  ✅ CERRADA (2026-06-29)
+> Implementada en `feature/finanzas-fase3`. SDD: `docs/sdd/03-egresos-recurrentes.md`. Tabla `egresos_recurrentes` + `egresos.egreso_recurrente_id`; comando `egresos:generar-recurrentes` (idempotente, catch-up, vigencia, ajuste día hábil) + schedule diario; CRUD de plantillas; `RecurrenceCalculator` unit-testeado. Frecuencias mensual/bimestral/trimestral/anual (quincenal → Fase 3B). 20 tests verdes, 0 regresiones; aislado del motor.
 - **Objetivo:** que servidores/suscripciones/nómina base se generen solos cada mes.
 - **Alcance:** migración `egresos_recurrentes`; CRUD de plantillas; **command artisan** `egresos:generar-recurrentes` (idempotente) + registrar el **schedule** (ver nota de infra abajo — hay que montarlo desde cero); marca `origen='recurrente'` y liga `egreso_recurrente_id`.
 - **Diseño clave:** el generador es un **command artisan ejecutable a mano**; el scheduler solo lo automatiza. Así funciona aunque no haya cron (Herd local) corriéndolo solo.

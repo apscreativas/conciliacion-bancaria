@@ -19,7 +19,8 @@ Todos los modelos de dominio usan el trait `TeamOwned` salvo los marcados como "
 | `Tolerancia` | `tolerancias` | TeamOwned | — | Configuración `(monto, dias)` por team. Solo 1 registro por team |
 | `Empresa` | `empresas` | TeamOwned | `HasFactory` | Unidad de negocio del grupo (Finanzas Fase 0). Dimensión para clasificar ingresos/egresos por empresa |
 | `Categoria` | `categorias` | TeamOwned | `HasFactory` | Catálogo de cuentas gerencial (Finanzas Fase 0). Clasifica ingresos y egresos; arma el Estado de Resultados |
-| `Egreso` | `egresos` | TeamOwned | `HasFactory` | Gasto manual (Finanzas Fase 2). Clasificado por `empresa_id` (opcional) + `categoria_id` (egreso). `origen` manual/recurrente |
+| `Egreso` | `egresos` | TeamOwned | `HasFactory` | Gasto manual o generado (Finanzas Fase 2/3). Clasificado por `empresa_id` (opcional) + `categoria_id` (egreso). `origen` manual/recurrente; `egreso_recurrente_id` si vino de plantilla |
+| `EgresoRecurrente` | `egresos_recurrentes` | TeamOwned | `HasFactory` | Plantilla de gasto recurrente (Finanzas Fase 3). El comando `egresos:generar-recurrentes` crea egresos según `frecuencia`/`proxima_generacion`/vigencia |
 
 ### Nota sobre `Banco`
 
@@ -37,6 +38,8 @@ Team ──* Factura, Movimiento, Conciliacion, Archivo, BankFormat, ExportReque
 Team ──* TeamInvitation
 Team ──* Empresa, Categoria       # Finanzas Fase 0 (tablas nuevas, sin relación aún con el dominio existente)
 Team ──* Egreso                   # Finanzas Fase 2
+Team ──* EgresoRecurrente         # Finanzas Fase 3
+EgresoRecurrente ──< Egreso (egreso_recurrente_id)  # plantilla → egresos generados (nullOnDelete)
 Empresa ──? Egreso (empresa_id)   # opcional; Categoria ──? Egreso (categoria_id); User ──< Egreso (creador)
 
 Archivo ──1 Factura (file_id_xml)    # XMLs tienen 1 factura
@@ -193,8 +196,18 @@ El polling frontend considera "worker offline" si `status=queued` y `created_at 
 - `fecha` (date), `monto` (decimal 15,2), `descripcion`, `proveedor` (nullable)
 - `metodo_pago` enum(`transferencia`,`efectivo`,`tarjeta`,`otro`) nullable
 - `comprobante_path` (nullable, futuro), `origen` enum(`manual`,`recurrente`) default `manual`
+- `egreso_recurrente_id` (FK egresos_recurrentes, nullable, nullOnDelete, **Finanzas Fase 3**) — plantilla que lo generó (`origen='recurrente'`)
 - `user_id` (creador), timestamps. **Index**: `(team_id, fecha)`
-- Diferido a Fase 3: `egreso_recurrente_id`. Evidencia: `2026_06_29_000002_create_egresos_table.php`
+- Evidencia: `2026_06_29_000002_create_egresos_table.php`, `2026_06_29_000004_add_egreso_recurrente_id_to_egresos_table.php`
+
+#### `egresos_recurrentes` (Finanzas Fase 3)
+- `id`, `team_id` (FK cascade), `empresa_id` (FK nullable nullOnDelete), `categoria_id` (FK nullable nullOnDelete, requerida app, tipo=egreso)
+- `descripcion`, `proveedor` (nullable), `monto` (decimal 15,2)
+- `frecuencia` enum(`quincenal`,`mensual`,`bimestral`,`trimestral`,`anual`) default `mensual` (Fase 3 usa mensual+; quincenal→Fase 3B)
+- `dia_del_mes` (tinyint 1–31, clamp al mes), `ajuste_dia_habil` enum(`ninguno`,`habil_anterior`,`habil_siguiente`) default `habil_anterior`
+- `fecha_inicio` (date), `vigencia_tipo` enum(`indefinida`,`hasta_fecha`,`num_pagos`), `fecha_fin` (nullable), `num_pagos` (nullable), `pagos_generados` (int default 0)
+- `activo` (bool), `proxima_generacion` (date), `user_id`, timestamps. **Index**: `(team_id, activo, proxima_generacion)`
+- Evidencia: `2026_06_29_000003_create_egresos_recurrentes_table.php`
 
 #### `categorias` (Finanzas Fase 0)
 - `id`, `team_id` (FK, cascade), `nombre`
@@ -218,6 +231,7 @@ El polling frontend considera "worker offline" si `status=queued` y `created_at 
 - `Empresa`: `activo => boolean`, `orden => integer`
 - `Categoria`: `activo => boolean`, `orden => integer`
 - `Egreso`: `fecha => date`, `monto => decimal:2`
+- `EgresoRecurrente`: `monto => decimal:2`, `fecha_inicio`/`fecha_fin`/`proxima_generacion => date`, `activo => boolean`, `dia_del_mes`/`num_pagos`/`pagos_generados => integer`
 - `User`: `email_verified_at => datetime`, `password => hashed` (via `casts()` method en Laravel 12)
 
 ---
@@ -230,6 +244,7 @@ Localizadas en `database/factories/`:
 - `TeamFactory`, `FacturaFactory`, `MovimientoFactory`, `ArchivoFactory`, `BancoFactory`, `ExportRequestFactory`.
 - `EmpresaFactory`, `CategoriaFactory` (Finanzas Fase 0; `CategoriaFactory::ingreso()` state para categorías de ingreso).
 - `EgresoFactory` (Finanzas Fase 2; default `origen='manual'`, categoría de egreso).
+- `EgresoRecurrenteFactory` (Finanzas Fase 3; default mensual, día 1, vigencia indefinida).
 
 No hay factories para `Conciliacion`, `BankFormat`, `Tolerancia`, `TeamInvitation` — se crean con `forceCreate` en los tests.
 
