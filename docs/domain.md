@@ -17,6 +17,8 @@ Todos los modelos de dominio usan el trait `TeamOwned` salvo los marcados como "
 | `BankFormat` | `bank_formats` | TeamOwned | `HasFactory` | Mapeo de columnas para parsear Excel/CSV bancario |
 | `ExportRequest` | `export_requests` | TeamOwned | `HasFactory` | Registro de solicitudes de exportación async |
 | `Tolerancia` | `tolerancias` | TeamOwned | — | Configuración `(monto, dias)` por team. Solo 1 registro por team |
+| `Empresa` | `empresas` | TeamOwned | `HasFactory` | Unidad de negocio del grupo (Finanzas Fase 0). Dimensión para clasificar ingresos/egresos por empresa |
+| `Categoria` | `categorias` | TeamOwned | `HasFactory` | Catálogo de cuentas gerencial (Finanzas Fase 0). Clasifica ingresos y egresos; arma el Estado de Resultados |
 
 ### Nota sobre `Banco`
 
@@ -32,6 +34,7 @@ User ──1 Team (current_team_id)
 Team ──* Team (ownedTeams por user_id)
 Team ──* Factura, Movimiento, Conciliacion, Archivo, BankFormat, ExportRequest, Tolerancia
 Team ──* TeamInvitation
+Team ──* Empresa, Categoria       # Finanzas Fase 0 (tablas nuevas, sin relación aún con el dominio existente)
 
 Archivo ──1 Factura (file_id_xml)    # XMLs tienen 1 factura
 Archivo ──* Movimiento (file_id)     # Estados de cuenta tienen muchos movimientos
@@ -173,6 +176,21 @@ El polling frontend considera "worker offline" si `status=queued` y `created_at 
 - `id`, `team_id`, `nombre`, `codigo`, `estatus`
 - Evidencia: `2026_01_23_211432_create_bancos_table.php`
 
+#### `empresas` (Finanzas Fase 0)
+- `id`, `team_id` (FK, cascade), `nombre`, `slug`, `color` (hex, nullable)
+- `activo` (bool, default true), `orden` (int, default 0)
+- **Unique**: `(team_id, slug)`
+- Evidencia: `2026_06_26_000001_create_empresas_table.php`
+
+#### `categorias` (Finanzas Fase 0)
+- `id`, `team_id` (FK, cascade), `nombre`
+- `tipo` (`ingreso` | `egreso`)
+- `grupo` (`ingreso` | `costo_venta` | `gasto_operativo` | `abajo_ebitda`) — arma el Estado de Resultados
+- `naturaleza` (`fijo` | `variable`, **nullable** — aplica sobre todo a egresos; ingresos quedan en null)
+- `activo` (bool, default true), `orden` (int, default 0)
+- **Unique**: `(team_id, nombre)`
+- Evidencia: `2026_06_26_000002_create_categorias_table.php`
+
 ---
 
 ## Casts importantes
@@ -183,6 +201,8 @@ El polling frontend considera "worker offline" si `status=queued` y `created_at 
 - `Team`: `personal_team => bool`
 - `ExportRequest`: `filters => array`
 - `Tolerancia`: `monto => decimal:2`, `dias => integer`
+- `Empresa`: `activo => boolean`, `orden => integer`
+- `Categoria`: `activo => boolean`, `orden => integer`
 - `User`: `email_verified_at => datetime`, `password => hashed` (via `casts()` method en Laravel 12)
 
 ---
@@ -193,6 +213,7 @@ Localizadas en `database/factories/`:
 
 - `UserFactory` — genera user con team personal automático por virtud de `User@booted`.
 - `TeamFactory`, `FacturaFactory`, `MovimientoFactory`, `ArchivoFactory`, `BancoFactory`, `ExportRequestFactory`.
+- `EmpresaFactory`, `CategoriaFactory` (Finanzas Fase 0; `CategoriaFactory::ingreso()` state para categorías de ingreso).
 
 No hay factories para `Conciliacion`, `BankFormat`, `Tolerancia`, `TeamInvitation` — se crean con `forceCreate` en los tests.
 
@@ -200,7 +221,8 @@ No hay factories para `Conciliacion`, `BankFormat`, `Tolerancia`, `TeamInvitatio
 
 ## Seeders
 
-Solo `DatabaseSeeder.php` existe. No hay seed de datos demo.
+- `DatabaseSeeder.php` — crea un usuario/team base y llama a `FinanzasCatalogoSeeder`.
+- `FinanzasCatalogoSeeder.php` (Finanzas Fase 0) — siembra, **por cada team** e idempotentemente (`updateOrCreate`), las 3 empresas (Aplicaciones Creativas, Tu Checador, Domoticap) y el catálogo de 21 categorías del PRD §4.2. Ejecutable suelto: `php artisan db:seed --class=FinanzasCatalogoSeeder`.
 
 ---
 

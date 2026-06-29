@@ -183,6 +183,31 @@ Ver `flows/export.md` para detalle.
 
 ---
 
+## Settings — Empresas y Categorías (Finanzas Fase 0)
+
+Resource routes (`->except('show')`). Modelos/columnas en español (`Empresa`, `Categoria`), pero **rutas y Vue pages en inglés** (convención CLAUDE.md §5.2): `companies` / `categories`.
+
+**Autorización vía Policy** (`EmpresaPolicy`, `CategoriaPolicy`, auto-descubiertas): `viewAny` → cualquier miembro del team; `create/update/delete` → solo **owner del team** (`User::ownsTeam`). Los controllers llaman `$this->authorize(...)`; los `EmpresaRequest`/`CategoriaRequest` (FormRequests) hacen la validación. El sidebar y el `index` ocultan acciones a no-owners.
+
+| Método | URI | Controller@action | Nombre | Tipo respuesta |
+|---|---|---|---|---|
+| GET | `/settings/companies` | `EmpresaController@index` | `settings.companies.index` | Inertia `Settings/Companies/Index` |
+| GET | `/settings/companies/create` | `EmpresaController@create` | `settings.companies.create` | Inertia `Settings/Companies/Create` |
+| POST | `/settings/companies` | `EmpresaController@store` | `settings.companies.store` | Redirect |
+| GET | `/settings/companies/{company}/edit` | `EmpresaController@edit` | `settings.companies.edit` | Inertia `Settings/Companies/Create` con `empresa` |
+| PUT/PATCH | `/settings/companies/{company}` | `EmpresaController@update` | `settings.companies.update` | Redirect |
+| DELETE | `/settings/companies/{company}` | `EmpresaController@destroy` | `settings.companies.destroy` | Redirect |
+| GET | `/settings/categories` | `CategoriaController@index` | `settings.categories.index` | Inertia `Settings/Categories/Index` |
+| GET | `/settings/categories/create` | `CategoriaController@create` | `settings.categories.create` | Inertia `Settings/Categories/Create` |
+| POST | `/settings/categories` | `CategoriaController@store` | `settings.categories.store` | Redirect |
+| GET | `/settings/categories/{category}/edit` | `CategoriaController@edit` | `settings.categories.edit` | Inertia `Settings/Categories/Create` con `categoria` |
+| PUT/PATCH | `/settings/categories/{category}` | `CategoriaController@update` | `settings.categories.update` | Redirect |
+| DELETE | `/settings/categories/{category}` | `CategoriaController@destroy` | `settings.categories.destroy` | Redirect |
+
+Acceso a un registro de otro team → **404** (global scope `TeamOwned` en el route-model binding). Mutación por un miembro no-owner → **403** (Policy). Validación: `nombre` único por team, **slug único por team** (evita 500 por colisión de slug derivado), y en categorías invariante `tipo`/`grupo`/`naturaleza` (ingreso ⇒ grupo `ingreso` sin naturaleza; egreso ⇒ grupo de egreso con naturaleza).
+
+---
+
 ## Health check
 
 | Método | URI | Nombre |
