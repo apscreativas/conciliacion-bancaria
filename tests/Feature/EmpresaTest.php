@@ -103,3 +103,25 @@ it('denies access to an empresa from another team (404)', function () {
     actingAs($userB)->delete(route('settings.companies.destroy', $empresaA->id))
         ->assertNotFound();
 });
+
+it('defaults orden to 0 when the field is empty (no 500 on the NOT NULL column)', function () {
+    $user = User::factory()->create();
+
+    actingAs($user)->post(route('settings.companies.store'), [
+        'nombre' => 'Sin Orden',
+        'orden' => '',
+    ])->assertRedirect(route('settings.companies.index'));
+
+    $this->assertDatabaseHas('empresas', ['nombre' => 'Sin Orden', 'orden' => 0]);
+});
+
+it('authorizes before validating (non-owner with invalid data gets 403, not 422)', function () {
+    $owner = User::factory()->create();
+    $team = $owner->currentTeam;
+
+    $member = User::factory()->create();
+    $member->forceFill(['current_team_id' => $team->id])->saveQuietly();
+
+    actingAs($member)->post(route('settings.companies.store'), ['nombre' => ''])
+        ->assertForbidden();
+});

@@ -57,6 +57,7 @@ const submit = () => {
                                 <InputLabel for="nombre" :value="$t('Nombre')" />
                                 <TextInput id="nombre" type="text" class="mt-1 block w-full" v-model="form.nombre" required autofocus />
                                 <InputError class="mt-2" :message="form.errors.nombre" />
+                                <InputError class="mt-2" :message="(form.errors as Record<string, string>).slug" />
                             </div>
 
                             <div>

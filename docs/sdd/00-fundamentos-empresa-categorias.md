@@ -48,7 +48,8 @@ Resource `->except('show')` bajo el grupo `auth`. **Rutas/Vue pages en inglés**
 
 ## 6. Reglas de negocio y casos borde
 - **Tenancy:** `TeamOwned` filtra por `current_team_id`; defense-in-depth `where('team_id', ...)` en `index`. Registro de otro team → 404 (route-model binding scopeado).
-- **Autorización:** vía `EmpresaPolicy`/`CategoriaPolicy` (trait `ChecksTeamOwnership` → `User::ownsTeam`, con guard de `currentTeam` null). `viewAny` abierto a miembros; `create/update/delete` solo owner → 403.
+- **Autorización:** vía `EmpresaPolicy`/`CategoriaPolicy` (trait `ChecksTeamOwnership` → `User::ownsTeam`, con guard de `currentTeam` null). `viewAny` abierto a miembros; `create/update/delete` solo owner → 403. La autz de `store`/`update` vive en `FormRequest::authorize()` para que el **403 preceda al 422** (un no-owner no ve errores de validación). `update`/`delete` además verifican `team_id === current_team_id` (defense-in-depth).
+- **`orden`:** la columna es `NOT NULL default 0`; el FormRequest coacciona un valor vacío a `0` en `prepareForValidation` (evita un 500 por INSERT con NULL).
 - **Unicidad:** `nombre` **y** `slug` únicos por team (ambos validados en `EmpresaRequest`). El slug se deriva de `Str::slug(nombre)` en `prepareForValidation`; validar su unicidad evita un 500 por el índice `unique(team_id, slug)` cuando dos nombres distintos producen el mismo slug. Nombre sin alfanuméricos (slug vacío) → 422.
 - **`naturaleza` nullable + invariante:** `CategoriaRequest::withValidator` exige ingreso ⇒ grupo `ingreso` y `naturaleza` null; egreso ⇒ grupo de egreso y `naturaleza` fijo/variable. El form Vue ajusta opciones según `tipo` para espejarlo.
 - **`activo`:** `prepareForValidation` lo castea a booleano (`$this->boolean`), evitando que un PUT sin el campo reactive el registro.
@@ -58,7 +59,7 @@ Resource `->except('show')` bajo el grupo `auth`. **Rutas/Vue pages en inglés**
 - **Pest feature:** `EmpresaTest`, `CategoriaTest` — CRUD owner feliz, validación required/unique, enums inválidos.
 - **Tenancy:** acceso a registro de otro team → 404; mutación por miembro no-owner → 403.
 - **Seeder:** `FinanzasCatalogoSeederTest` — 3 empresas + catálogo por team; re-run no duplica.
-- Resultado: **12 passed (47 assertions)** (incluye slug-colisión, slug vacío, invariante tipo/grupo/naturaleza, y 403 de categorías). Suite completa: 69 passed / 13 failed (los 13 son baseline preexistente, 0 regresiones nuevas).
+- Resultado: **14 passed (51 assertions)** (incluye slug-colisión, slug vacío, invariante tipo/grupo/naturaleza, 403 de categorías, `orden` vacío → 0, y autz-antes-de-validar). Suite completa: 71 passed / 13 failed (los 13 son baseline preexistente, 0 regresiones nuevas).
 
 ## 8. Impacto en lo existente
 - ¿Tenancy/transacciones/colas/migraciones/contratos Inertia? Solo **migraciones nuevas** (aditivas) y **rutas/páginas nuevas**. No cambia props de páginas existentes.

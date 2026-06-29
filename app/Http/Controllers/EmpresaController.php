@@ -4,11 +4,13 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\EmpresaRequest;
 use App\Models\Empresa;
+use Illuminate\Http\RedirectResponse;
 use Inertia\Inertia;
+use Inertia\Response;
 
 class EmpresaController extends Controller
 {
-    public function index()
+    public function index(): Response
     {
         $this->authorize('viewAny', Empresa::class);
 
@@ -22,23 +24,21 @@ class EmpresaController extends Controller
         ]);
     }
 
-    public function create()
+    public function create(): Response
     {
         $this->authorize('create', Empresa::class);
 
         return Inertia::render('Settings/Companies/Create');
     }
 
-    public function store(EmpresaRequest $request)
+    public function store(EmpresaRequest $request): RedirectResponse
     {
-        $this->authorize('create', Empresa::class);
-
         Empresa::create($request->validated() + ['team_id' => auth()->user()->current_team_id]);
 
         return redirect()->route('settings.companies.index')->with('success', 'Empresa creada exitosamente.');
     }
 
-    public function edit(Empresa $company)
+    public function edit(Empresa $company): Response
     {
         $this->authorize('update', $company);
 
@@ -47,16 +47,14 @@ class EmpresaController extends Controller
         ]);
     }
 
-    public function update(EmpresaRequest $request, Empresa $company)
+    public function update(EmpresaRequest $request, Empresa $company): RedirectResponse
     {
-        $this->authorize('update', $company);
-
         $company->update($request->validated());
 
         return redirect()->route('settings.companies.index')->with('success', 'Empresa actualizada exitosamente.');
     }
 
-    public function destroy(Empresa $company)
+    public function destroy(Empresa $company): RedirectResponse
     {
         $this->authorize('delete', $company);
 

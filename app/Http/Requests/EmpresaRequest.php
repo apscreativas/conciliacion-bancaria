@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Models\Empresa;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -9,11 +10,15 @@ use Illuminate\Validation\Rule;
 class EmpresaRequest extends FormRequest
 {
     /**
-     * Autorización resuelta por EmpresaPolicy vía $this->authorize() en el controller.
+     * Autz vía EmpresaPolicy ANTES de validar (un no-owner recibe 403, no 422).
      */
     public function authorize(): bool
     {
-        return true;
+        $empresa = $this->route('company');
+
+        return $empresa
+            ? $this->user()->can('update', $empresa)
+            : $this->user()->can('create', Empresa::class);
     }
 
     protected function prepareForValidation(): void
@@ -21,6 +26,9 @@ class EmpresaRequest extends FormRequest
         $this->merge([
             'slug' => Str::slug((string) $this->input('nombre')),
             'activo' => $this->boolean('activo'),
+            // La columna orden es NOT NULL default 0; un input vacío llega como null
+            // (ConvertEmptyStringsToNull) → coercionar para no romper el INSERT.
+            'orden' => $this->filled('orden') ? $this->input('orden') : 0,
         ]);
     }
 
@@ -41,7 +49,7 @@ class EmpresaRequest extends FormRequest
             ],
             'color' => ['nullable', 'string', 'max:20'],
             'activo' => ['boolean'],
-            'orden' => ['nullable', 'integer', 'min:0'],
+            'orden' => ['integer', 'min:0'],
         ];
     }
 

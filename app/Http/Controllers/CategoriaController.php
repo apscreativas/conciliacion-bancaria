@@ -4,11 +4,13 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\CategoriaRequest;
 use App\Models\Categoria;
+use Illuminate\Http\RedirectResponse;
 use Inertia\Inertia;
+use Inertia\Response;
 
 class CategoriaController extends Controller
 {
-    public function index()
+    public function index(): Response
     {
         $this->authorize('viewAny', Categoria::class);
 
@@ -22,23 +24,21 @@ class CategoriaController extends Controller
         ]);
     }
 
-    public function create()
+    public function create(): Response
     {
         $this->authorize('create', Categoria::class);
 
         return Inertia::render('Settings/Categories/Create');
     }
 
-    public function store(CategoriaRequest $request)
+    public function store(CategoriaRequest $request): RedirectResponse
     {
-        $this->authorize('create', Categoria::class);
-
         Categoria::create($request->validated() + ['team_id' => auth()->user()->current_team_id]);
 
         return redirect()->route('settings.categories.index')->with('success', 'Categoría creada exitosamente.');
     }
 
-    public function edit(Categoria $category)
+    public function edit(Categoria $category): Response
     {
         $this->authorize('update', $category);
 
@@ -47,16 +47,14 @@ class CategoriaController extends Controller
         ]);
     }
 
-    public function update(CategoriaRequest $request, Categoria $category)
+    public function update(CategoriaRequest $request, Categoria $category): RedirectResponse
     {
-        $this->authorize('update', $category);
-
         $category->update($request->validated());
 
         return redirect()->route('settings.categories.index')->with('success', 'Categoría actualizada exitosamente.');
     }
 
-    public function destroy(Categoria $category)
+    public function destroy(Categoria $category): RedirectResponse
     {
         $this->authorize('delete', $category);
 

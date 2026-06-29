@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Models\Categoria;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -9,11 +10,15 @@ use Illuminate\Validation\Rule;
 class CategoriaRequest extends FormRequest
 {
     /**
-     * Autorización resuelta por CategoriaPolicy vía $this->authorize() en el controller.
+     * Autz vía CategoriaPolicy ANTES de validar (un no-owner recibe 403, no 422).
      */
     public function authorize(): bool
     {
-        return true;
+        $categoria = $this->route('category');
+
+        return $categoria
+            ? $this->user()->can('update', $categoria)
+            : $this->user()->can('create', Categoria::class);
     }
 
     protected function prepareForValidation(): void
@@ -22,6 +27,8 @@ class CategoriaRequest extends FormRequest
             'activo' => $this->boolean('activo'),
             // El select envía '' cuando "No aplica"; normalizar a null.
             'naturaleza' => $this->input('naturaleza') ?: null,
+            // orden es NOT NULL default 0; un input vacío llega como null → coercionar.
+            'orden' => $this->filled('orden') ? $this->input('orden') : 0,
         ]);
     }
 
@@ -39,7 +46,7 @@ class CategoriaRequest extends FormRequest
             'grupo' => ['required', Rule::in(['ingreso', 'costo_venta', 'gasto_operativo', 'abajo_ebitda'])],
             'naturaleza' => ['nullable', Rule::in(['fijo', 'variable'])],
             'activo' => ['boolean'],
-            'orden' => ['nullable', 'integer', 'min:0'],
+            'orden' => ['integer', 'min:0'],
         ];
     }
 
