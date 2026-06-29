@@ -1,20 +1,37 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { router } from "@inertiajs/vue3";
+
+interface Empresa {
+    id: number;
+    nombre: string;
+    color: string | null;
+}
 
 const props = defineProps<{
     group: {
         id: string; // Group UUID
         created_at: string;
         user: { name: string };
+        empresa?: Empresa | null;
         invoices: Array<any>;
         movements: Array<any>;
         total_invoices: number;
         total_movements: number;
         total_applied: number;
     };
+    empresas: Empresa[];
 }>();
 
 const emit = defineEmits(["unreconcile"]);
+
+const assignEmpresa = (event: Event) => {
+    const value = (event.target as HTMLSelectElement).value;
+    router.patch(
+        route("reconciliation.group.empresa.update", props.group.id),
+        { empresa_id: value === "" ? null : Number(value) },
+        { preserveScroll: true },
+    );
+};
 
 const formatDate = (dateString: string) => {
     if (!dateString) return "";
@@ -56,6 +73,31 @@ const getDifference = (group: any) => {
                 </h3>
                 <div class="text-sm text-gray-400 mt-1">
                     {{ formatDate(group.created_at) }} • {{ group.user.name }}
+                </div>
+                <!-- Empresa: badge + selector (Finanzas Fase 1) -->
+                <div class="flex items-center gap-2 mt-2">
+                    <span
+                        v-if="group.empresa"
+                        class="text-[10px] font-bold px-2 py-0.5 rounded border inline-block w-fit"
+                        :style="{
+                            backgroundColor: (group.empresa.color || '#9ca3af') + '15',
+                            color: group.empresa.color || '#9ca3af',
+                            borderColor: (group.empresa.color || '#9ca3af') + '30',
+                        }"
+                    >
+                        {{ group.empresa.nombre }}
+                    </span>
+                    <select
+                        :value="group.empresa?.id ?? ''"
+                        @change="assignEmpresa"
+                        :title="$t('Asignar empresa')"
+                        class="text-xs border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-1"
+                    >
+                        <option value="">{{ $t("Sin asignar") }}</option>
+                        <option v-for="e in empresas" :key="e.id" :value="e.id">
+                            {{ e.nombre }}
+                        </option>
+                    </select>
                 </div>
             </div>
 
