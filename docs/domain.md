@@ -19,6 +19,7 @@ Todos los modelos de dominio usan el trait `TeamOwned` salvo los marcados como "
 | `Tolerancia` | `tolerancias` | TeamOwned | — | Configuración `(monto, dias)` por team. Solo 1 registro por team |
 | `Empresa` | `empresas` | TeamOwned | `HasFactory` | Unidad de negocio del grupo (Finanzas Fase 0). Dimensión para clasificar ingresos/egresos por empresa |
 | `Categoria` | `categorias` | TeamOwned | `HasFactory` | Catálogo de cuentas gerencial (Finanzas Fase 0). Clasifica ingresos y egresos; arma el Estado de Resultados |
+| `Egreso` | `egresos` | TeamOwned | `HasFactory` | Gasto manual (Finanzas Fase 2). Clasificado por `empresa_id` (opcional) + `categoria_id` (egreso). `origen` manual/recurrente |
 
 ### Nota sobre `Banco`
 
@@ -35,6 +36,8 @@ Team ──* Team (ownedTeams por user_id)
 Team ──* Factura, Movimiento, Conciliacion, Archivo, BankFormat, ExportRequest, Tolerancia
 Team ──* TeamInvitation
 Team ──* Empresa, Categoria       # Finanzas Fase 0 (tablas nuevas, sin relación aún con el dominio existente)
+Team ──* Egreso                   # Finanzas Fase 2
+Empresa ──? Egreso (empresa_id)   # opcional; Categoria ──? Egreso (categoria_id); User ──< Egreso (creador)
 
 Archivo ──1 Factura (file_id_xml)    # XMLs tienen 1 factura
 Archivo ──* Movimiento (file_id)     # Estados de cuenta tienen muchos movimientos
@@ -182,6 +185,15 @@ El polling frontend considera "worker offline" si `status=queued` y `created_at 
 - **Unique**: `(team_id, slug)`
 - Evidencia: `2026_06_26_000001_create_empresas_table.php`
 
+#### `egresos` (Finanzas Fase 2)
+- `id`, `team_id` (FK cascade)
+- `empresa_id` (FK empresas, nullable, nullOnDelete), `categoria_id` (FK categorias, nullable DB + **requerida a nivel app**, nullOnDelete)
+- `fecha` (date), `monto` (decimal 15,2), `descripcion`, `proveedor` (nullable)
+- `metodo_pago` enum(`transferencia`,`efectivo`,`tarjeta`,`otro`) nullable
+- `comprobante_path` (nullable, futuro), `origen` enum(`manual`,`recurrente`) default `manual`
+- `user_id` (creador), timestamps. **Index**: `(team_id, fecha)`
+- Diferido a Fase 3: `egreso_recurrente_id`. Evidencia: `2026_06_29_000002_create_egresos_table.php`
+
 #### `categorias` (Finanzas Fase 0)
 - `id`, `team_id` (FK, cascade), `nombre`
 - `tipo` (`ingreso` | `egreso`)
@@ -203,6 +215,7 @@ El polling frontend considera "worker offline" si `status=queued` y `created_at 
 - `Tolerancia`: `monto => decimal:2`, `dias => integer`
 - `Empresa`: `activo => boolean`, `orden => integer`
 - `Categoria`: `activo => boolean`, `orden => integer`
+- `Egreso`: `fecha => date`, `monto => decimal:2`
 - `User`: `email_verified_at => datetime`, `password => hashed` (via `casts()` method en Laravel 12)
 
 ---
@@ -214,6 +227,7 @@ Localizadas en `database/factories/`:
 - `UserFactory` — genera user con team personal automático por virtud de `User@booted`.
 - `TeamFactory`, `FacturaFactory`, `MovimientoFactory`, `ArchivoFactory`, `BancoFactory`, `ExportRequestFactory`.
 - `EmpresaFactory`, `CategoriaFactory` (Finanzas Fase 0; `CategoriaFactory::ingreso()` state para categorías de ingreso).
+- `EgresoFactory` (Finanzas Fase 2; default `origen='manual'`, categoría de egreso).
 
 No hay factories para `Conciliacion`, `BankFormat`, `Tolerancia`, `TeamInvitation` — se crean con `forceCreate` en los tests.
 
