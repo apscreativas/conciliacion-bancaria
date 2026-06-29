@@ -44,7 +44,8 @@ class EgresoController extends Controller
             ->pluck('total', 'categoria_id');
 
         $perPageParam = $request->input('per_page', 25);
-        $perPage = $perPageParam === 'all' ? 10000 : (int) $perPageParam;
+        // Whitelist: un per_page basura (no numérico) caería a 0 → paginate(0) → DivisionByZeroError (500).
+        $perPage = $perPageParam === 'all' ? 10000 : (in_array((int) $perPageParam, [10, 25, 50, 100], true) ? (int) $perPageParam : 25);
 
         $egresos = $query->with(['empresa:id,nombre,color', 'categoria:id,nombre'])
             ->orderBy('fecha', 'desc')
@@ -54,15 +55,22 @@ class EgresoController extends Controller
 
         $categorias = $this->categoriasEgreso($teamId);
 
+        // Desglose por categoría + bucket "Sin categoría" para que la suma cuadre con $total.
+        $breakdown = $categorias
+            ->map(fn ($c) => ['nombre' => $c->nombre, 'total' => (float) ($totalsByCategoria[$c->id] ?? 0)])
+            ->filter(fn ($row) => $row['total'] > 0)
+            ->values();
+        $sinCategoria = (float) ($totalsByCategoria->get(null) ?? $totalsByCategoria->get('') ?? 0);
+        if ($sinCategoria > 0) {
+            $breakdown->push(['nombre' => 'Sin categoría', 'total' => $sinCategoria]);
+        }
+
         return Inertia::render('Expenses/Index', [
             'egresos' => $egresos,
             'empresas' => $this->empresasActivas($teamId),
             'categorias' => $categorias,
             'total' => (float) $total,
-            'totalsByCategoria' => $categorias
-                ->map(fn ($c) => ['nombre' => $c->nombre, 'total' => (float) ($totalsByCategoria[$c->id] ?? 0)])
-                ->filter(fn ($row) => $row['total'] > 0)
-                ->values(),
+            'totalsByCategoria' => $breakdown,
             'filters' => [
                 'month' => $month,
                 'year' => $year,
@@ -100,6 +108,7 @@ class EgresoController extends Controller
 
     public function edit(Egreso $expense): Response
     {
+        $this->ensureOwnTeam($expense);
         $teamId = auth()->user()->current_team_id;
 
         return Inertia::render('Expenses/Create', [
@@ -111,6 +120,8 @@ class EgresoController extends Controller
 
     public function update(EgresoRequest $request, Egreso $expense): RedirectResponse
     {
+        $this->ensureOwnTeam($expense);
+
         $expense->update($request->validated());
 
         return redirect()->route('expenses.index')->with('success', 'Egreso actualizado exitosamente.');
@@ -118,9 +129,22 @@ class EgresoController extends Controller
 
     public function destroy(Egreso $expense): RedirectResponse
     {
+        $this->ensureOwnTeam($expense);
+
         $expense->delete();
 
         return back()->with('success', 'Egreso eliminado.');
+    }
+
+    /**
+     * Defense-in-depth de tenancy (CLAUDE.md §1.3): aun con el global scope de TeamOwned,
+     * los controllers re-verifican team_id sobre el modelo bindeado.
+     */
+    private function ensureOwnTeam(Egreso $expense): void
+    {
+        if ($expense->team_id !== auth()->user()->current_team_id) {
+            abort(403);
+        }
     }
 
     private function empresasActivas(int $teamId)

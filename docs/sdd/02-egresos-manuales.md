@@ -37,12 +37,16 @@ Resource `expenses` `->except('show')`. Ver tabla en `docs/endpoints.md` → "Eg
 - **Validación:** `categoria_id` requerida + `exists` scoped (team **y `tipo=egreso`** → una categoría de ingreso se rechaza); `monto` > 0 (`gt:0`); `empresa_id` opcional + `exists` scoped al team; `metodo_pago` opcional enum. `empresa_id`/`metodo_pago` vacíos se normalizan a null (`prepareForValidation`).
 - **Tenancy:** cualquier miembro del team CRUD; registro/empresa/categoría de otro team → 404 (binding) / 422 (validación scoped).
 - **Borrado de catálogo:** `nullOnDelete` en `empresa_id` y `categoria_id` → borrar una empresa/categoría NO borra el egreso (queda "sin asignar"/"sin categoría"), evitando 500 o cascada sobre datos financieros. `categoria_id` es requerida a nivel app pero nullable en DB por esta razón.
-- **Totales:** `total` (suma del conjunto filtrado) y `totalsByCategoria` se calculan sobre el query filtrado (no solo la página).
+- **Totales:** `total` (suma del conjunto filtrado) y `totalsByCategoria` se calculan sobre el query filtrado (no solo la página). El desglose incluye un bucket **"Sin categoría"** para que la suma cuadre con `total` (egresos con `categoria_id` null).
+- **`per_page`:** whitelist (10/25/50/100/all); un valor basura cae a 25 (evita `paginate(0)` → 500).
+- **Fechas (UI):** `fecha` se serializa como ISO completo (cast `date`); el front recorta a `YYYY-MM-DD` para mostrar (sin desfase de zona) y para poblar `<input type=date>` al editar.
+- **Cat/empresa inactiva:** el form de edición fusiona la categoría/empresa actual del egreso en el `<select>` aunque esté inactiva (no se pierde el valor).
 - **No doble conteo (PRD §4.1):** los egresos viven en su propia tabla; el P&L (Fase 5) NO sumará los cargos bancarios.
 
 ## 7. Plan de pruebas
 - **Pest (`EgresoTest`):** alta/edición/baja por un **miembro no-owner** (set `user_id`=creador, `origen=manual`); validación (`monto` 0 → error, `categoria` requerida, categoría `tipo=ingreso` rechazada, empresa/categoría de otro team → 422); **tenancy** (egreso de otro team → 404); **filtros** por empresa/categoría (Inertia assert sobre `egresos.data`) y **total** del periodo.
-- Resultado: **6 passed (59 assertions)**. Suite completa: **77 passed / 13 failed** (13 baseline preexistente; 0 regresiones nuevas).
+- **Casos de code review:** `per_page` basura no 500ea; egreso sin categoría entra en `total` y en el desglose ("Sin categoría").
+- Resultado: **8 passed (72 assertions)**. Suite completa: **79 passed / 13 failed** (13 baseline preexistente; 0 regresiones nuevas).
 
 ## 8. Impacto en lo existente
 - Migración aditiva; rutas/páginas nuevas; un link de sidebar. **No toca** conciliación/matcher/`conciliacions`.

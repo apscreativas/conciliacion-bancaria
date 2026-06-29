@@ -127,3 +127,20 @@ it('filters by empresa and categoria and computes the period total', function ()
     actingAs($user)->get(route('expenses.index', ['month' => 6, 'year' => 2026, 'empresa_id' => $empresa->id]))
         ->assertInertia(fn (Assert $p) => $p->has('egresos.data', 1)->where('total', 1000));
 });
+
+it('does not 500 on a junk per_page value', function () {
+    $user = User::factory()->create();
+    actingAs($user)->get(route('expenses.index', ['per_page' => 'abc']))->assertOk();
+});
+
+it('includes uncategorized egresos in the total and breakdown', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $cat = egresoCategoria($team->id, 'Renta');
+
+    Egreso::factory()->create(['team_id' => $team->id, 'user_id' => $user->id, 'categoria_id' => $cat->id, 'monto' => 1000, 'fecha' => '2026-06-05']);
+    Egreso::factory()->create(['team_id' => $team->id, 'user_id' => $user->id, 'categoria_id' => null, 'monto' => 250, 'fecha' => '2026-06-06']);
+
+    actingAs($user)->get(route('expenses.index', ['month' => 6, 'year' => 2026]))
+        ->assertInertia(fn (Assert $p) => $p->where('total', 1250)->has('totalsByCategoria', 2));
+});

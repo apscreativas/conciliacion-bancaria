@@ -17,6 +17,8 @@ interface Egreso {
     id: number;
     empresa_id: number | null;
     categoria_id: number | null;
+    empresa?: Option | null;
+    categoria?: Option | null;
     fecha: string;
     monto: number;
     descripcion: string;
@@ -32,11 +34,23 @@ const props = defineProps<{
 
 const isEdit = computed(() => !!props.egreso);
 
+// Si la cat/empresa actual del egreso fue desactivada, no estará en la lista activa;
+// la fusionamos para que el <select> siempre muestre el valor real.
+const categoriaOptions = computed<Option[]>(() => {
+    const cur = props.egreso?.categoria;
+    return cur && !props.categorias.some((c) => c.id === cur.id) ? [cur, ...props.categorias] : props.categorias;
+});
+const empresaOptions = computed<Option[]>(() => {
+    const cur = props.egreso?.empresa;
+    return cur && !props.empresas.some((e) => e.id === cur.id) ? [cur, ...props.empresas] : props.empresas;
+});
+
 const selectClass =
     "mt-1 block w-full rounded-md border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500";
 
 const form = useForm({
-    fecha: props.egreso?.fecha ?? new Date().toISOString().slice(0, 10),
+    // `fecha` puede venir como ISO completo; el <input type=date> requiere 'YYYY-MM-DD'.
+    fecha: props.egreso?.fecha?.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
     monto: props.egreso?.monto ?? "",
     descripcion: props.egreso?.descripcion ?? "",
     proveedor: props.egreso?.proveedor ?? "",
@@ -92,7 +106,7 @@ const submit = () => {
                                 <InputLabel for="categoria_id" :value="$t('Categoría')" />
                                 <select id="categoria_id" v-model="form.categoria_id" required :class="selectClass">
                                     <option value="" disabled>{{ $t("Selecciona…") }}</option>
-                                    <option v-for="c in categorias" :key="c.id" :value="c.id">{{ c.nombre }}</option>
+                                    <option v-for="c in categoriaOptions" :key="c.id" :value="c.id">{{ c.nombre }}</option>
                                 </select>
                                 <InputError class="mt-2" :message="form.errors.categoria_id" />
                             </div>
@@ -101,7 +115,7 @@ const submit = () => {
                                 <InputLabel for="empresa_id" :value="$t('Empresa')" />
                                 <select id="empresa_id" v-model="form.empresa_id" :class="selectClass">
                                     <option value="">{{ $t("Sin asignar") }}</option>
-                                    <option v-for="e in empresas" :key="e.id" :value="e.id">{{ e.nombre }}</option>
+                                    <option v-for="e in empresaOptions" :key="e.id" :value="e.id">{{ e.nombre }}</option>
                                 </select>
                                 <InputError class="mt-2" :message="form.errors.empresa_id" />
                             </div>
