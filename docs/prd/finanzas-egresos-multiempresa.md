@@ -240,7 +240,8 @@ Cada fase es entregable, probable y no rompe lo anterior. Orden = dependencias.
 - **Criterios de aceptación:** se pueden listar/crear/editar empresas y categorías; aislamiento por team verificado con test de tenancy; seeder idempotente.
 - **Riesgo/tenancy:** bajo. Tablas nuevas, sin tocar dominio existente.
 
-### Fase 1 — Asignación de empresa a conciliaciones (post-conciliación)
+### Fase 1 — Asignación de empresa a conciliaciones (post-conciliación)  ✅ CERRADA (2026-06-29)
+> Implementada en `feature/finanzas-fase1`. SDD: `docs/sdd/01-asignacion-empresa-conciliacion.md`. Columna `conciliacions.empresa_id` (nullable, nullOnDelete); endpoint `PATCH /reconciliation/group/{groupId}/empresa` (asigna a nivel grupo, espeja `destroyGroup`); selector + badge en el Historial. **Solo `empresa_id`** (categoria_id diferido a Fase 5). Motor de matching intacto (gate financiero verificado). 5 tests nuevos verdes, 0 regresiones.
 - **Objetivo:** etiquetar el ingreso bancario ya conciliado con su empresa, sin tocar el matcher.
 - **Alcance:** migración `add empresa_id (+ categoria_id) to conciliacions`; UI para asignar empresa a un **grupo conciliado** (1 click por `group_id`) desde el workbench/historial; endpoint `PATCH /reconciliation/group/{groupId}/empresa`; bulk-assign.
 - **Criterios:** asignar/reasignar empresa a un grupo; conciliaciones existentes quedan en "sin asignar" sin romperse; ownership validado; test que confirma que el `MatcherService` no cambió (correr `MatcherServiceTest`, `RegressionTest`).

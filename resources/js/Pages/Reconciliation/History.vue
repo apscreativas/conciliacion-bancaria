@@ -19,6 +19,7 @@ const props = defineProps<{
             id: string; // Group UUID
             created_at: string;
             user: { name: string };
+            empresa?: { id: number; nombre: string; color: string | null } | null;
             invoices: Array<{
                 id: number;
                 uuid: string;
@@ -41,6 +42,7 @@ const props = defineProps<{
         }>;
         links: Array<any>;
     };
+    empresas: Array<{ id: number; nombre: string; color: string | null }>;
     filters?: {
         search?: string;
         month?: string;
@@ -187,6 +189,7 @@ const closeModal = () => {
                         v-for="group in reconciledGroups.data"
                         :key="group.id"
                         :group="group"
+                        :empresas="empresas"
                         @unreconcile="confirmUnreconcile"
                     />
                 </div>

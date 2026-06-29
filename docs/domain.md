@@ -44,6 +44,7 @@ Archivo ──? BankFormat (bank_format_id)
 Factura ──* Conciliacion             # Una factura puede aplicarse a múltiples movimientos
 Movimiento ──* Conciliacion          # Un movimiento puede cubrir múltiples facturas
 Conciliacion ──1 User (user_id)      # Quién conciló
+Conciliacion ──? Empresa (empresa_id) # Unidad de negocio asignada (Finanzas Fase 1, nullable)
 Conciliacion.group_id (UUID)         # Agrupa toda la operación N-M
 
 BankFormat ──1 Banco (banco_id)
@@ -141,6 +142,7 @@ El polling frontend considera "worker offline" si `status=queued` y `created_at 
 #### `conciliacions` (sic — typo histórico)
 - `id`, `user_id`, `team_id`, `factura_id`, `movimiento_id`
 - `group_id` (UUID) — agrupa operaciones N-M
+- `empresa_id` (FK nullable, **Finanzas Fase 1**) — unidad de negocio asignada al grupo post-conciliación. `nullOnDelete` (borrar empresa NO borra conciliaciones). null = "sin asignar". El matcher NO lo setea. Evidencia: `2026_06_29_000001_add_empresa_id_to_conciliacions_table.php`
 - `monto_aplicado` (decimal 15,2) — calculado por `MatcherService` con saldo restante
 - `estatus` (`conciliado` | `pendiente_revision`, default `conciliado`)
 - `tipo` (`automatico` | `manual`)

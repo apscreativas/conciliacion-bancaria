@@ -11,6 +11,7 @@ class Conciliacion extends Model
     protected $fillable = [
         'team_id',
         'group_id',
+        'empresa_id',
         'user_id',
         'factura_id',
         'movimiento_id',
@@ -25,7 +26,6 @@ class Conciliacion extends Model
         'fecha_conciliacion' => 'datetime',
     ];
 
-
     public function factura()
     {
         return $this->belongsTo(Factura::class);
@@ -39,5 +39,10 @@ class Conciliacion extends Model
     public function movimiento()
     {
         return $this->belongsTo(Movimiento::class);
+    }
+
+    public function empresa()
+    {
+        return $this->belongsTo(Empresa::class);
     }
 }

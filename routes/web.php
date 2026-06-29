@@ -42,6 +42,7 @@ Route::middleware('auth')->group(function () {
     Route::post('/reconciliation/batch', [App\Http\Controllers\ReconciliationController::class, 'batch'])->name('reconciliation.batch');
     Route::delete('/reconciliation/{id}', [App\Http\Controllers\ReconciliationController::class, 'destroy'])->name('reconciliation.destroy');
     Route::delete('/reconciliation/group/{groupId}', [App\Http\Controllers\ReconciliationController::class, 'destroyGroup'])->name('reconciliation.group.destroy');
+    Route::patch('/reconciliation/group/{groupId}/empresa', [App\Http\Controllers\ReconciliationController::class, 'updateGroupEmpresa'])->name('reconciliation.group.empresa.update');
     Route::get('/reconciliation/history', [App\Http\Controllers\ReconciliationController::class, 'history'])->name('reconciliation.history');
     Route::get('/reconciliation/status', [App\Http\Controllers\ReconciliationController::class, 'status'])->name('reconciliation.status');
     Route::get('/reconciliation/export', [App\Http\Controllers\ReconciliationController::class, 'export'])->middleware('throttle:10,1')->name('reconciliation.export');

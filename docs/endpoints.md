@@ -96,6 +96,7 @@ Evidencia: `routes/web.php`, `routes/auth.php`.
 | POST | `/reconciliation/batch` | `ReconciliationController@batch` | `reconciliation.batch` | — |
 | DELETE | `/reconciliation/{id}` | `ReconciliationController@destroy` | `reconciliation.destroy` | — |
 | DELETE | `/reconciliation/group/{groupId}` | `ReconciliationController@destroyGroup` | `reconciliation.group.destroy` | — |
+| PATCH | `/reconciliation/group/{groupId}/empresa` | `ReconciliationController@updateGroupEmpresa` | `reconciliation.group.empresa.update` | Asigna/des-asigna `empresa_id` a todas las filas del grupo (Finanzas Fase 1). Scope `team_id` (404 si ajeno); `empresa_id` nullable + `exists` scoped (422 si de otro team) |
 | GET | `/reconciliation/history` | `ReconciliationController@history` | `reconciliation.history` | — |
 | GET | `/reconciliation/status` | `ReconciliationController@status` | `reconciliation.status` | — |
 | GET | `/reconciliation/export` | `ReconciliationController@export` | `reconciliation.export` | **`throttle:10,1`** |
@@ -108,7 +109,7 @@ Evidencia: `routes/web.php`, `routes/auth.php`.
 |---|---|
 | `/reconciliation` | `Reconciliation/Workbench` (props: `invoices`, `movements`, `tolerance`, `filters`) |
 | `/reconciliation/auto` | `Reconciliation/Matches` (props: `matches`, `tolerance`) |
-| `/reconciliation/history` | `Reconciliation/History` (props: `reconciledGroups` paginator con transform custom, `filters`) |
+| `/reconciliation/history` | `Reconciliation/History` (props: `reconciledGroups` paginator con transform custom —cada grupo incluye `empresa`—, `empresas` lista activa del team, `filters`) |
 | `/reconciliation/status` | `Reconciliation/Status` (props: `conciliatedInvoices`, `conciliatedMovements`, `pendingInvoices`, `pendingMovements` + totales + `filters`) |
 
 ### Flujo de export
