@@ -23,11 +23,17 @@ use Carbon\Carbon;
  * Todas las fuentes usan `TeamOwned`: el scope por team aplica en contexto
  * request/actingAs. `empresaId = null` → consolidado (incluye filas sin empresa).
  *
+ * Queue-safety: el parámetro `teamId` permite filtrar por team de forma EXPLÍCITA,
+ * sin depender del global scope ambiente de `TeamOwned` (que se apaga cuando no hay
+ * `Auth::check()`, p.ej. en un job en cola). Pásalo siempre desde código sin auth.
+ *
  * Identidad garantizada: `utilidad_neta = ingresos.total − egresos_total`.
  */
 class ProfitLossService
 {
     /**
+     * @param  int|null  $teamId  Filtro de team EXPLÍCITO (queue-safe). `null` → depende del
+     *                            global scope ambiente de `TeamOwned` (comportamiento original).
      * @return array{
      *     desde: string,
      *     hasta: string,
@@ -46,7 +52,7 @@ class ProfitLossService
      *     egresos_total: float
      * }
      */
-    public function forPeriod(Carbon $desde, Carbon $hasta, ?int $empresaId = null): array
+    public function forPeriod(Carbon $desde, Carbon $hasta, ?int $empresaId = null, ?int $teamId = null): array
     {
         $d = $desde->toDateString();
         $h = $hasta->toDateString();
@@ -61,12 +67,14 @@ class ProfitLossService
             ->where('movimientos.tipo', 'abono')
             ->whereBetween('movimientos.fecha', [$d, $h])
             ->when($empresaId !== null, fn ($q) => $q->where('conciliacions.empresa_id', $empresaId))
+            ->when($teamId !== null, fn ($q) => $q->where('conciliacions.team_id', $teamId))
             ->sum('conciliacions.monto_aplicado');
 
         // Ingreso manual (efectivo).
         $manual = (float) IngresoManual::query()
             ->whereBetween('fecha', [$d, $h])
             ->when($empresaId !== null, fn ($q) => $q->where('empresa_id', $empresaId))
+            ->when($teamId !== null, fn ($q) => $q->where('ingresos_manuales.team_id', $teamId))
             ->sum('monto');
 
         $ingresosTotal = $bancario + $manual;
@@ -75,12 +83,14 @@ class ProfitLossService
         $egresosTotal = (float) Egreso::query()
             ->whereBetween('fecha', [$d, $h])
             ->when($empresaId !== null, fn ($q) => $q->where('empresa_id', $empresaId))
+            ->when($teamId !== null, fn ($q) => $q->where('egresos.team_id', $teamId))
             ->sum('monto');
 
         $porGrupo = Egreso::query()
             ->leftJoin('categorias', 'egresos.categoria_id', '=', 'categorias.id')
             ->whereBetween('egresos.fecha', [$d, $h])
             ->when($empresaId !== null, fn ($q) => $q->where('egresos.empresa_id', $empresaId))
+            ->when($teamId !== null, fn ($q) => $q->where('egresos.team_id', $teamId))
             ->groupBy('categorias.grupo')
             ->selectRaw('categorias.grupo as grupo, SUM(egresos.monto) as total')
             ->pluck('total', 'grupo');

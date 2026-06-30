@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Archivo;
 use App\Models\Categoria;
 use App\Models\Conciliacion;
 use App\Models\Egreso;
@@ -23,15 +24,23 @@ uses(RefreshDatabase::class);
  */
 function plConciliacion(int $teamId, int $userId, ?int $empresaId, float $montoAplicado, string $movFecha, string $tipo = 'abono', string $estatus = 'conciliado'): Conciliacion
 {
+    // user_id/team_id explícitos: el helper funciona con o sin auth (queue-safety).
+    // Bajo actingAs estos valores coinciden con los que pondrían HasCreator/TeamOwned.
+    $archivoMov = Archivo::factory()->create(['team_id' => $teamId, 'user_id' => $userId]);
     $movimiento = Movimiento::factory()->create([
         'team_id' => $teamId,
+        'user_id' => $userId,
+        'file_id' => $archivoMov->id,
         'fecha' => $movFecha,
         'tipo' => $tipo,
         'monto' => 99999, // distinto de monto_aplicado a propósito
     ]);
 
+    $archivoFac = Archivo::factory()->create(['team_id' => $teamId, 'user_id' => $userId]);
     $factura = Factura::factory()->create([
         'team_id' => $teamId,
+        'user_id' => $userId,
+        'file_id_xml' => $archivoFac->id,
         'monto' => 88888, // distinto de monto_aplicado a propósito
     ]);
 
@@ -408,4 +417,58 @@ it('excludes data from other teams via TeamOwned scope', function () {
         ->and($pl['ingresos']['total'])->toBe(1000.0)
         ->and($pl['egresos_total'])->toBe(0.0)
         ->and($pl['utilidad_neta'])->toBe(1000.0);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CASO 9 — Queue-safety: SIN actingAs (global scope de TeamOwned inactivo), el
+// parámetro `teamId` explícito aísla por team. Esto es lo que usa el job de PDF
+// en cola (sin Auth). Cuadra al centavo y el consolidado incluye filas sin empresa.
+// ─────────────────────────────────────────────────────────────────────────────
+it('isolates by explicit team_id without auth (queue-safe)', function () {
+    // NO hay actingAs: el global scope de TeamOwned está inactivo.
+    // Sembramos 2 teams; los helpers reciben team_id explícito, así que funcionan sin auth.
+    $userA = User::factory()->create();
+    $teamA = $userA->currentTeam;
+    $userB = User::factory()->create();
+    $teamB = $userB->currentTeam;
+
+    $empresaA = Empresa::factory()->create(['team_id' => $teamA->id]);
+    $cvA = plCategoriaEgreso($teamA->id, 'costo_venta');
+
+    // ── Team A
+    plConciliacion($teamA->id, $userA->id, $empresaA->id, 5000, '2026-06-10');
+    plConciliacion($teamA->id, $userA->id, null, 1000, '2026-06-05'); // sin empresa → debe entrar al consolidado del team A
+    plIngresoManual($teamA->id, $userA->id, null, 250, '2026-06-12');
+    plEgreso($teamA->id, $userA->id, $empresaA->id, $cvA->id, 2000, '2026-06-03');
+    // Team A consolidado: ingresos 5000 + 1000 + 250 = 6250; egresos 2000; neta 4250
+
+    // ── Team B (ajeno, montos grandes que NO deben filtrarse)
+    $empresaB = Empresa::factory()->create(['team_id' => $teamB->id]);
+    $cvB = plCategoriaEgreso($teamB->id, 'costo_venta');
+    plConciliacion($teamB->id, $userB->id, $empresaB->id, 99000, '2026-06-10');
+    plIngresoManual($teamB->id, $userB->id, null, 88000, '2026-06-12');
+    plEgreso($teamB->id, $userB->id, $empresaB->id, $cvB->id, 77000, '2026-06-03');
+
+    [$desde, $hasta] = plPeriodo();
+    $svc = new ProfitLossService;
+
+    // Consolidado del team A vía team_id explícito (sin auth): incluye fila sin empresa.
+    $consA = $svc->forPeriod($desde, $hasta, null, $teamA->id);
+
+    expect($consA['ingresos']['bancario_conciliado'])->toBe(6000.0) // 5000 + 1000 (sin empresa incluida)
+        ->and($consA['ingresos']['manual'])->toBe(250.0)
+        ->and($consA['ingresos']['total'])->toBe(6250.0)
+        ->and($consA['costo_venta'])->toBe(2000.0)
+        ->and($consA['egresos_total'])->toBe(2000.0)
+        ->and($consA['utilidad_neta'])->toBe(4250.0); // 6250 - 2000
+
+    // Identidad maestra se mantiene aislada al team A.
+    expect($consA['utilidad_neta'])->toBe(round($consA['ingresos']['total'] - $consA['egresos_total'], 2));
+
+    // Team B aislado: sus montos grandes no entran en el cálculo del team A (ya verificado),
+    // y el cálculo explícito del team B solo ve lo suyo.
+    $consB = $svc->forPeriod($desde, $hasta, null, $teamB->id);
+    expect($consB['ingresos']['total'])->toBe(187000.0) // 99000 + 88000
+        ->and($consB['egresos_total'])->toBe(77000.0)
+        ->and($consB['utilidad_neta'])->toBe(110000.0); // 187000 - 77000
 });

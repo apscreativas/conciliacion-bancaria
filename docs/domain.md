@@ -178,9 +178,9 @@ El polling frontend considera "worker offline" si `status=queued` y `created_at 
 - Evidencia: `2026_01_30_161505_create_bank_formats_table.php`, `2026_02_04_044150_add_debit_credit_columns_to_bank_formats_table.php`, `2026_03_10_000001_add_banco_id_to_bank_formats_table.php`
 
 #### `export_requests`
-- `id`, `team_id`, `user_id`, `type` (`xlsx` | `pdf`)
+- `id`, `team_id`, `user_id`, `type` (`xlsx` | `pdf` para conciliación; **`pl_pdf`** para el Estado de Resultados, Finanzas Fase 6)
 - `status` (ver lista arriba), `file_path`, `file_name`
-- `filters` (JSON con month/year/date_from/date_to/search/amount_min/amount_max)
+- `filters` (JSON con month/year/date_from/date_to/search/amount_min/amount_max; para `pl_pdf`: granularidad/empresa_id/month/year/**team_id**)
 - `error_message` (nullable)
 - Evidencia: `2026_02_12_223751_create_export_requests_table.php`
 
@@ -296,6 +296,18 @@ No hay factories para `Conciliacion`, `BankFormat`, `Tolerancia`, `TeamInvitatio
 - `egresos.monto` agrupado por `categorias.grupo` (`costo_venta`/`gasto_operativo`/`abajo_ebitda`) → COGS/OPEX/abajo-EBITDA; residuo en `sin_clasificar`.
 
 `empresa_id` NULL = consolidado (incluye filas sin empresa). Tenancy por `TeamOwned`. Reglas de negocio y fórmula: `docs/business-rules.md` §13; diseño completo: `docs/sdd/06-profit-loss-service.md`.
+
+**Extensión Fase 6 (queue-safety):** `forPeriod(Carbon $desde, Carbon $hasta, ?int $empresaId = null, ?int $teamId = null)` ahora acepta un cuarto parámetro `?int $teamId` (al final, backward-compatible). Con `teamId` dado, añade `->where('<tabla>.team_id', $teamId)` a cada query (conciliacions / ingresos_manuales / egresos), **sin depender** del global scope ambiente de `TeamOwned` (que se apaga cuando no hay `Auth::check()`, p.ej. en un job en cola). El `ExecutiveController` y el `GenerateProfitLossPdfJob` lo pasan **siempre** explícito (defense-in-depth, consistente con el export existente). `teamId = null` → comportamiento original (depende del scope ambiente; tests de Fase 5 siguen verdes). **Sin migración** (Fase 6 no toca esquema).
+
+### `PeriodResolver` (Finanzas Fase 6)
+
+`App\Services\Finance\PeriodResolver` (POPO sin estado, **sin migración**) centraliza la resolución de rangos `[desde, hasta]` (Carbon) para el dashboard ejecutivo. Métodos:
+
+- `resolve(string $granularidad, int $year, int $month): array{desde, hasta}` — rango del periodo que contiene el ancla (año/mes). Granularidades: `mensual` (mes), `trimestral` (`startOfQuarter`/`endOfQuarter`), `semestral` (ene–jun si `month <= 6`, jul–dic si `>= 7`), `anual` (año completo). Valor no reconocido → `mensual`.
+- `previous(string $granularidad, Carbon $desde): array{desde, hasta}` — periodo inmediatamente anterior de la misma granularidad (maneja cruce de año vía `subMonthsNoOverflow`/`subYearNoOverflow`).
+- `yearOverYear(array{desde, hasta} $rango): array{desde, hasta}` — mismo rango un año antes (`subYearNoOverflow`).
+
+Devuelve `startOfDay`/`endOfDay`; el consumidor (`ProfitLossService`) usa `toDateString()`. Consumido por `ExecutiveController` (request) y `GenerateProfitLossPdfJob` (cola). Diseño completo: `docs/sdd/07-executive-dashboard.md`.
 
 ---
 
