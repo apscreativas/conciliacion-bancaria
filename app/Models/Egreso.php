@@ -16,6 +16,7 @@ class Egreso extends Model
         'team_id',
         'empresa_id',
         'categoria_id',
+        'egreso_recurrente_id',
         'fecha',
         'monto',
         'descripcion',
@@ -44,5 +45,10 @@ class Egreso extends Model
     public function user()
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function egresoRecurrente()
+    {
+        return $this->belongsTo(EgresoRecurrente::class);
     }
 }

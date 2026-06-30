@@ -131,6 +131,39 @@ vendor/bin/sail artisan app:recalculate-movement-hashes --dry-run
 vendor/bin/sail artisan app:recalculate-movement-hashes
 ```
 
+### `egresos:generar-recurrentes` (Finanzas Fase 3)
+
+Genera egresos a partir de las plantillas `egresos_recurrentes` **vencidas** (`activo` y `proxima_generacion <= hoy`), de **todos** los teams (recorre con `withoutGlobalScopes()`, no por efecto colateral de "no hay sesión"). **Idempotente** (no duplica) y con **catch-up** (genera los periodos faltantes hasta hoy, tope 24/plantilla). Marca cada egreso con `origen='recurrente'` y `egreso_recurrente_id`, avanza `proxima_generacion` y aplica vigencia (`num_pagos`/`hasta_fecha` → `activo=false`). Frecuencias mensual/bimestral/trimestral/anual + ajuste a día hábil por fin de semana.
+
+Detalles de robustez (Fase 3, hardening post-review):
+- **Idempotencia respaldada en DB:** índice único `egresos_recurrente_periodo_unique` sobre `egresos(egreso_recurrente_id, fecha)`. El `exists()` del comando es la ruta normal; si una corrida concurrente (manual vs cron) gana la carrera, el `INSERT` duplicado se rechaza y se trata como "ya generado". Un periodo ya existente **cuenta** para `num_pagos` (no se sobre-genera).
+- **Vigencia `hasta_fecha`** se evalúa contra la **fecha de pago ajustada** (no el día nominal): con `habil_siguiente`, un nominal de fin de mes que caería después de `fecha_fin` **no** se genera.
+- **Tope de catch-up (24):** al alcanzarlo, además del `warn` en consola se escribe `Log::warning` (el stdout del scheduler se descarta).
+
+```bash
+php artisan egresos:generar-recurrentes --dry-run   # reporta sin persistir
+php artisan egresos:generar-recurrentes             # genera
+```
+
+---
+
+## Scheduler
+
+Definido en `routes/console.php` (Laravel 12 no usa `Console/Kernel`):
+
+```php
+Schedule::command('egresos:generar-recurrentes')->dailyAt('01:00')->withoutOverlapping()->onOneServer();
+```
+
+Se corre **diario**; cada plantilla decide qué le toca vía `proxima_generacion`, así que correr de más es inocuo (idempotente). `withoutOverlapping` evita solapes en un host; `onOneServer` evita que en despliegue multi-servidor cada host genere el mismo periodo (requiere un cache store con locks: database/redis).
+
+- **Producción:** una sola entrada de cron dispara TODOS los schedules:
+  ```cron
+  * * * * * cd /var/www/conciliacion && php artisan schedule:run >> /dev/null 2>&1
+  ```
+- **Local (Herd, sin cron):** `php artisan schedule:work` en una terminal (corre el scheduler en foreground), **o** ejecutar el comando a mano cuando se necesite.
+- Ver lo programado: `php artisan schedule:list`.
+
 ---
 
 ## Storage

@@ -63,6 +63,9 @@ Route::middleware('auth')->group(function () {
     // Egresos — Finanzas Fase 2 (captura manual de gastos)
     Route::resource('expenses', \App\Http\Controllers\EgresoController::class)->except('show');
 
+    // Egresos recurrentes — Finanzas Fase 3 (plantillas)
+    Route::resource('recurring-expenses', \App\Http\Controllers\EgresoRecurrenteController::class)->except('show');
+
     // Settings Routes
     Route::get('/settings/tolerance', [App\Http\Controllers\ToleranciaController::class, 'edit'])->name('settings.tolerance');
     Route::post('/settings/tolerance', [App\Http\Controllers\ToleranciaController::class, 'update'])->name('settings.tolerance.update');
