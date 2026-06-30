@@ -196,6 +196,28 @@ it('generates per team with the correct team_id and empleado_id', function () {
     expect(nominaDe($eB)->first()->team_id)->toBe($userB->current_team_id);
 });
 
+it('backfills the correct short month with --month when run on a day-30 date', function () {
+    Carbon::setTestNow('2026-08-30'); // día 30: createFromFormat('Y-m') sin '!' desbordaría feb a marzo.
+    $user = User::factory()->create();
+    categoriasNomina($user->current_team_id);
+    $e = empleado($user, ['fecha_entrada' => '2026-01-01']);
+
+    $this->artisan('nomina:generar --month=2026-02')->assertSuccessful();
+
+    expect(nominaDe($e)->where('fecha', 'like', '2026-02-%')->count())->toBeGreaterThan(0);
+    expect(nominaDe($e)->where('fecha', 'like', '2026-03-%')->count())->toBe(0);
+});
+
+it('fails on a malformed --month without generating anything', function () {
+    $user = User::factory()->create();
+    categoriasNomina($user->current_team_id);
+    empleado($user, ['fecha_entrada' => '2026-01-01']);
+
+    $this->artisan('nomina:generar --month=2026-13')->assertFailed();
+    $this->artisan('nomina:generar --month=junk')->assertFailed();
+    expect(Egreso::withoutGlobalScopes()->whereNotNull('empleado_id')->count())->toBe(0);
+});
+
 it('does not persist anything on --dry-run', function () {
     Carbon::setTestNow('2026-06-30');
     $user = User::factory()->create();

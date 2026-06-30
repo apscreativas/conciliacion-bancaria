@@ -2,15 +2,17 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\ResolvesExpenseOptions;
 use App\Http\Requests\EmpleadoRequest;
 use App\Models\Empleado;
-use App\Models\Empresa;
 use Illuminate\Http\RedirectResponse;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class EmpleadoController extends Controller
 {
+    use ResolvesExpenseOptions;
+
     public function index(): Response
     {
         $this->authorize('viewAny', Empleado::class);
@@ -25,7 +27,6 @@ class EmpleadoController extends Controller
 
         return Inertia::render('Employees/Index', [
             'empleados' => $empleados,
-            'empresas' => $this->empresasActivas($teamId),
         ]);
     }
 
@@ -41,6 +42,8 @@ class EmpleadoController extends Controller
 
     public function store(EmpleadoRequest $request): RedirectResponse
     {
+        $this->authorize('create', Empleado::class);
+
         Empleado::create($request->validated() + [
             'team_id' => auth()->user()->current_team_id,
             'user_id' => auth()->id(),
@@ -62,6 +65,8 @@ class EmpleadoController extends Controller
 
     public function update(EmpleadoRequest $request, Empleado $employee): RedirectResponse
     {
+        $this->authorize('update', $employee);
+
         $employee->update($request->validated());
 
         return redirect()->route('employees.index')->with('success', 'Empleado actualizado exitosamente.');
@@ -74,14 +79,5 @@ class EmpleadoController extends Controller
         $employee->delete();
 
         return back()->with('success', 'Empleado eliminado.');
-    }
-
-    private function empresasActivas(int $teamId)
-    {
-        return Empresa::where('team_id', $teamId)
-            ->where('activo', true)
-            ->orderBy('orden')
-            ->orderBy('nombre')
-            ->get(['id', 'nombre', 'color']);
     }
 }

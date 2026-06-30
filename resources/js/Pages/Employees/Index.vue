@@ -30,7 +30,6 @@ interface Empleado {
 
 defineProps<{
     empleados: { data: Empleado[]; links: Array<any> };
-    empresas: Option[];
 }>();
 
 function paginationLabel(html: string): string {

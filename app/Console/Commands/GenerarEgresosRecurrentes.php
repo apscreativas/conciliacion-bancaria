@@ -131,9 +131,12 @@ class GenerarEgresosRecurrentes extends Command
         return self::SUCCESS;
     }
 
-    /** Violación de UNIQUE (SQLSTATE 23000 / código MySQL 1062). */
+    /**
+     * Violación de UNIQUE específicamente (código MySQL 1062). NO usamos el SQLSTATE genérico
+     * 23000: cubre también NOT NULL (1048) y FK (1452); tragarlos ocultaría un fallo real.
+     */
     private function isDuplicate(QueryException $e): bool
     {
-        return $e->getCode() === '23000' || (int) ($e->errorInfo[1] ?? 0) === 1062;
+        return (int) ($e->errorInfo[1] ?? 0) === 1062;
     }
 }

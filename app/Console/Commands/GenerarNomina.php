@@ -34,12 +34,20 @@ class GenerarNomina extends Command
         $dryRun = (bool) $this->option('dry-run');
         $today = now()->startOfDay();
 
-        [$desde, $quincenas] = $this->quincenasObjetivo($calc, $today);
+        $mes = $this->option('month');
+        if ($mes !== null && ! preg_match('/^\d{4}-(0[1-9]|1[0-2])$/', $mes)) {
+            $this->error('--month inválido: usa el formato YYYY-MM (por ejemplo 2026-02).');
+
+            return self::FAILURE;
+        }
+
+        [$desde, $quincenas] = $this->quincenasObjetivo($calc, $today, $mes);
 
         $creados = 0;
         $omitidosCategoria = 0;
         $omitidosComplemento = 0;
         $catCache = []; // team_id => [nombre => id|null]
+        $avisados = []; // "team_id:categoria" ya advertidos en esta corrida (evita spam de log)
 
         // Sin Auth en un comando → desactivamos el global scope explícitamente (CLAUDE.md §1.3).
         $empleados = Empleado::withoutGlobalScopes()->where('activo', true)->get();
@@ -65,7 +73,7 @@ class GenerarNomina extends Command
                 $montoFiscal = round(((float) $emp->salario_fiscal) / 2, 2);
                 if ($cats[$catFiscalNombre] === null) {
                     $omitidosCategoria++;
-                    Log::warning("[nomina:generar] Team #{$emp->team_id} sin categoría '{$catFiscalNombre}'; se omite fiscal de empleado #{$emp->id}.");
+                    $this->avisarCategoriaFaltante($avisados, $emp->team_id, $catFiscalNombre);
                 } else {
                     $creados += $this->generar($emp, $pago, 'fiscal', $cats[$catFiscalNombre], $montoFiscal, "Nómina fiscal {$qLabel} — {$emp->nombre}", $dryRun);
                 }
@@ -76,7 +84,7 @@ class GenerarNomina extends Command
                     $omitidosComplemento++;
                 } elseif ($cats[self::CAT_COMPLEMENTO] === null) {
                     $omitidosCategoria++;
-                    Log::warning("[nomina:generar] Team #{$emp->team_id} sin categoría '".self::CAT_COMPLEMENTO."'; se omite complemento de empleado #{$emp->id}.");
+                    $this->avisarCategoriaFaltante($avisados, $emp->team_id, self::CAT_COMPLEMENTO);
                 } else {
                     $montoComp = round($complemento / 2, 2);
                     $creados += $this->generar($emp, $pago, 'complemento', $cats[self::CAT_COMPLEMENTO], $montoComp, "Nómina complemento {$qLabel} — {$emp->nombre}", $dryRun);
@@ -96,17 +104,18 @@ class GenerarNomina extends Command
      *
      * @return array{0: Carbon, 1: array<int, array{nominal: Carbon, pago: Carbon}>}
      */
-    private function quincenasObjetivo(PayrollCalculator $calc, Carbon $today): array
+    private function quincenasObjetivo(PayrollCalculator $calc, Carbon $today, ?string $mes): array
     {
-        if ($mes = $this->option('month')) {
-            $ref = Carbon::createFromFormat('Y-m', $mes)->startOfMonth();
-            $desde = $ref->copy()->startOfMonth();
+        if ($mes) {
+            // '!Y-m' fija día=01 y hora=00 (sin '!' Carbon rellena el día con now(), lo que
+            // en días 29-31 desbordaría a otro mes para meses cortos). $mes ya viene validado.
+            $ref = Carbon::createFromFormat('!Y-m', $mes);
             $quincenas = array_filter(
                 $calc->quincenas((int) $ref->year, (int) $ref->month),
                 fn ($q) => $q['nominal']->lte($today),
             );
 
-            return [$desde, array_values($quincenas)];
+            return [$ref->copy(), array_values($quincenas)];
         }
 
         $desde = $today->copy()->subDays(self::VENTANA_DIAS);
@@ -180,9 +189,24 @@ class GenerarNomina extends Command
         });
     }
 
-    /** Violación de UNIQUE (SQLSTATE 23000 / código MySQL 1062). */
+    /**
+     * Violación de UNIQUE específicamente (código MySQL 1062). NO usamos el SQLSTATE genérico
+     * 23000: cubre también NOT NULL (1048) y FK (1452); tragarlos ocultaría una sub-generación
+     * de nómina. Cualquier otra violación de integridad debe propagarse.
+     */
     private function isDuplicate(QueryException $e): bool
     {
-        return $e->getCode() === '23000' || (int) ($e->errorInfo[1] ?? 0) === 1062;
+        return (int) ($e->errorInfo[1] ?? 0) === 1062;
+    }
+
+    /** Advierte una sola vez por (team, categoría) y por corrida para no inundar el log. */
+    private function avisarCategoriaFaltante(array &$avisados, int $teamId, string $categoria): void
+    {
+        $key = "{$teamId}:{$categoria}";
+        if (isset($avisados[$key])) {
+            return;
+        }
+        $avisados[$key] = true;
+        Log::warning("[nomina:generar] Team #{$teamId} sin categoría '{$categoria}' (activa); se omiten esos egresos de nómina.");
     }
 }
