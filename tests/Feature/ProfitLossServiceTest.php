@@ -21,7 +21,7 @@ uses(RefreshDatabase::class);
  * Los `monto` de movimiento/factura se siembran ABSURDOS y distintos de `monto_aplicado`
  * a propósito: el P&L debe sumar SOLO `conciliacions.monto_aplicado`, nunca esos.
  */
-function plConciliacion(int $teamId, int $userId, ?int $empresaId, float $montoAplicado, string $movFecha, string $tipo = 'abono'): Conciliacion
+function plConciliacion(int $teamId, int $userId, ?int $empresaId, float $montoAplicado, string $movFecha, string $tipo = 'abono', string $estatus = 'conciliado'): Conciliacion
 {
     $movimiento = Movimiento::factory()->create([
         'team_id' => $teamId,
@@ -42,7 +42,7 @@ function plConciliacion(int $teamId, int $userId, ?int $empresaId, float $montoA
         'factura_id' => $factura->id,
         'movimiento_id' => $movimiento->id,
         'monto_aplicado' => $montoAplicado,
-        'estatus' => 'conciliado',
+        'estatus' => $estatus,
         'tipo' => 'automatico',
         'fecha_conciliacion' => '2026-06-15',
     ]);
@@ -358,6 +358,26 @@ it('returns all zeros and zero margins for an empty period', function () {
         ->and($pl['margen_bruto'])->toBe(0.0)
         ->and($pl['margen_ebitda'])->toBe(0.0)
         ->and($pl['margen_neto'])->toBe(0.0);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CASO 8 — Definición de ingreso: solo conciliaciones confirmadas (estatus='conciliado')
+// contra un movimiento 'abono'. Excluye pendiente_revision y movimientos 'cargo'.
+// ─────────────────────────────────────────────────────────────────────────────
+it('counts only confirmed conciliaciones against abono movimientos as bank income', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    actingAs($user);
+
+    plConciliacion($team->id, $user->id, null, 5000, '2026-06-10');                            // válida → cuenta
+    plConciliacion($team->id, $user->id, null, 9000, '2026-06-11', 'abono', 'pendiente_revision'); // no confirmada → NO
+    plConciliacion($team->id, $user->id, null, 7000, '2026-06-12', 'cargo');                    // movimiento cargo → NO
+
+    [$desde, $hasta] = plPeriodo();
+    $pl = (new ProfitLossService)->forPeriod($desde, $hasta);
+
+    expect($pl['ingresos']['bancario_conciliado'])->toBe(5000.0)
+        ->and($pl['ingresos']['total'])->toBe(5000.0);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

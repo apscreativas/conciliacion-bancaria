@@ -51,9 +51,14 @@ class ProfitLossService
         $d = $desde->toDateString();
         $h = $hasta->toDateString();
 
-        // Ingreso bancario conciliado (fechado por movimientos.fecha).
+        // Ingreso bancario conciliado (fechado por movimientos.fecha). Definición explícita
+        // de ingreso: solo conciliaciones CONFIRMADas (estatus='conciliado') contra un
+        // movimiento de tipo 'abono' (depósito). Excluye 'pendiente_revision' y cualquier
+        // conciliación que apuntara a un 'cargo'.
         $bancario = (float) Conciliacion::query()
             ->join('movimientos', 'conciliacions.movimiento_id', '=', 'movimientos.id')
+            ->where('conciliacions.estatus', 'conciliado')
+            ->where('movimientos.tipo', 'abono')
             ->whereBetween('movimientos.fecha', [$d, $h])
             ->when($empresaId !== null, fn ($q) => $q->where('conciliacions.empresa_id', $empresaId))
             ->sum('conciliacions.monto_aplicado');
@@ -118,7 +123,11 @@ class ProfitLossService
      */
     private function money(float $value): float
     {
-        return (float) round($value, 2);
+        $r = round($value, 2);
+
+        // Normaliza -0.0 (residuo de resta de floats, p.ej. sin_clasificar de un P&L
+        // perfectamente cuadrado) → 0.0, para no serializar "-0" en la UI.
+        return $r == 0.0 ? 0.0 : $r;
     }
 
     /**
