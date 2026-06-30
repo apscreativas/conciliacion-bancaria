@@ -49,6 +49,12 @@ Route::middleware('auth')->group(function () {
     Route::get('/reconciliation/export/{id}/status', [App\Http\Controllers\ReconciliationController::class, 'checkExportStatus'])->name('reconciliation.export.status');
     Route::get('/reconciliation/export/{id}/download', [App\Http\Controllers\ReconciliationController::class, 'downloadExport'])->name('reconciliation.export.download');
 
+    // Dashboard ejecutivo — Finanzas Fase 6 (Estado de Resultados + export PDF, solo owner)
+    Route::get('/executive', [App\Http\Controllers\ExecutiveController::class, 'index'])->name('executive');
+    Route::get('/executive/export', [App\Http\Controllers\ExecutiveController::class, 'export'])->middleware('throttle:10,1')->name('executive.export');
+    Route::get('/executive/export/{id}/status', [App\Http\Controllers\ExecutiveController::class, 'checkExportStatus'])->name('executive.export.status');
+    Route::get('/executive/export/{id}/download', [App\Http\Controllers\ExecutiveController::class, 'downloadExport'])->name('executive.export.download');
+
     // Movimientos Routes
     Route::get('/movements', [App\Http\Controllers\MovimientoController::class, 'index'])->name('movements.index');
     Route::post('/movements/batch-destroy', [App\Http\Controllers\MovimientoController::class, 'batchDestroy'])->name('movements.batch-destroy');
