@@ -145,6 +145,30 @@ php artisan egresos:generar-recurrentes --dry-run   # reporta sin persistir
 php artisan egresos:generar-recurrentes             # genera
 ```
 
+### `nomina:generar` (Finanzas Fase 3B)
+
+**Archivo**: `app/Console/Commands/GenerarNomina.php`
+
+Genera los egresos de **nómina quincenal** por cada empleado **activo** de **todos** los teams (recorre con `withoutGlobalScopes()`, no por sesión). Por cada quincena del periodo crea hasta **dos** egresos: la parte **fiscal** (`concepto_nomina='fiscal'`) y, si aplica, el **complemento** (`concepto_nomina='complemento'`). Marca `origen='recurrente'` y `empleado_id`.
+
+- **Fechas de quincena** (vía `PayrollCalculator`): día **15** y **último día del mes**; si la fecha de pago cae en fin de semana se ajusta al **día hábil anterior** (reusa `RecurrenceCalculator::applyDiaHabil`). Sin festivos en v1.
+- **Montos**: salario **mensual** → **mitad por quincena**. Fiscal = `salario_fiscal / 2`; complemento = `(salario_real - salario_fiscal) / 2`.
+- **Mapeo de categoría** (por nombre exacto, activas, `tipo=egreso`): fiscal de empleado `clasificacion='tecnica'` → **"Nómina técnica facturable"** (COGS); `administrativa`/null → **"Nómina fiscal"**; complemento → **"Nómina complemento / real"**. Si falta la categoría del team se **omite** ese egreso (con `Log::warning`), no truena.
+- **Complemento ≤ 0** (salario real == fiscal) → se **omite** (no se crea egreso de complemento).
+- **Elegibilidad** por **fecha nominal** (no la de pago): no genera quincenas con `nominal < fecha_entrada` ni `nominal > fecha_baja`.
+- **Idempotencia**: respaldada en DB por el índice único `egresos_empleado_periodo_unique (empleado_id, fecha, concepto_nomina)`. El comando hace `exists()` (ruta normal) y envuelve el `INSERT` en `try/catch` de `QueryException` (carrera manual vs cron → duplicado rechazado y tratado como "ya generado"). El discriminador `concepto_nomina` desacopla la idempotencia de la categoría, así que cambiar `clasificacion` entre corridas **no** duplica el egreso fiscal.
+- **Ventana móvil de catch-up: 40 días** (default, sin `--month`): recorre las quincenas con fecha nominal entre `hoy-40d` y `hoy`. Nunca pre-genera futuro (`nominal <= hoy`).
+- **`--month=YYYY-MM`**: apunta a ese mes (ignora la ventana móvil) — para backfill de meses fuera de la ventana.
+- **`--dry-run`**: reporta sin persistir.
+- **Resumen** de corrida: egresos creados / omitidos por categoría faltante / complemento ≤ 0.
+- **Limitación**: un outage > 40 días deja huecos; reponerlos con `--month=YYYY-MM` por cada mes faltante.
+
+```bash
+php artisan nomina:generar --dry-run            # reporta sin persistir (ventana 40d)
+php artisan nomina:generar                       # genera la ventana móvil
+php artisan nomina:generar --month=2026-06       # backfill de un mes concreto
+```
+
 ---
 
 ## Scheduler
@@ -153,9 +177,10 @@ Definido en `routes/console.php` (Laravel 12 no usa `Console/Kernel`):
 
 ```php
 Schedule::command('egresos:generar-recurrentes')->dailyAt('01:00')->withoutOverlapping()->onOneServer();
+Schedule::command('nomina:generar')->dailyAt('01:30')->withoutOverlapping()->onOneServer();
 ```
 
-Se corre **diario**; cada plantilla decide qué le toca vía `proxima_generacion`, así que correr de más es inocuo (idempotente). `withoutOverlapping` evita solapes en un host; `onOneServer` evita que en despliegue multi-servidor cada host genere el mismo periodo (requiere un cache store con locks: database/redis).
+Ambos se corren **diario** y son **idempotentes**, así que correr de más es inocuo: `egresos:generar-recurrentes` decide qué generar vía `proxima_generacion`; `nomina:generar` vía la ventana móvil de 40 días + el índice único. `withoutOverlapping` evita solapes en un host; `onOneServer` evita que en despliegue multi-servidor cada host genere el mismo periodo (requiere un cache store con locks: database/redis). `nomina:generar` corre a las 01:30 (tras los recurrentes) para no solapar.
 
 - **Producción:** una sola entrada de cron dispara TODOS los schedules:
   ```cron

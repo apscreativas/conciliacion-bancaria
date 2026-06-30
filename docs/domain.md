@@ -19,8 +19,9 @@ Todos los modelos de dominio usan el trait `TeamOwned` salvo los marcados como "
 | `Tolerancia` | `tolerancias` | TeamOwned | — | Configuración `(monto, dias)` por team. Solo 1 registro por team |
 | `Empresa` | `empresas` | TeamOwned | `HasFactory` | Unidad de negocio del grupo (Finanzas Fase 0). Dimensión para clasificar ingresos/egresos por empresa |
 | `Categoria` | `categorias` | TeamOwned | `HasFactory` | Catálogo de cuentas gerencial (Finanzas Fase 0). Clasifica ingresos y egresos; arma el Estado de Resultados |
-| `Egreso` | `egresos` | TeamOwned | `HasFactory` | Gasto manual o generado (Finanzas Fase 2/3). Clasificado por `empresa_id` (opcional) + `categoria_id` (egreso). `origen` manual/recurrente; `egreso_recurrente_id` si vino de plantilla. Índice único `egresos_recurrente_periodo_unique` sobre `(egreso_recurrente_id, fecha)` garantiza un solo egreso recurrente por periodo (NULLs múltiples permitidos → no afecta egresos manuales) |
+| `Egreso` | `egresos` | TeamOwned | `HasFactory` | Gasto manual o generado (Finanzas Fase 2/3/3B). Clasificado por `empresa_id` (opcional) + `categoria_id` (egreso). `origen` manual/recurrente; `egreso_recurrente_id` si vino de plantilla recurrente; `empleado_id` (nullOnDelete) + `concepto_nomina` (`fiscal`/`complemento`) si vino de `nomina:generar` (Fase 3B). Índice único `egresos_recurrente_periodo_unique (egreso_recurrente_id, fecha)` para recurrentes; índice único `egresos_empleado_periodo_unique (empleado_id, fecha, concepto_nomina)` para nómina (NULLs múltiples permitidos → no afecta egresos manuales/recurrentes). `user_id` es nullable + `nullOnDelete` (Fase 3B) — un registro financiero sobrevive al borrado de su creador |
 | `EgresoRecurrente` | `egresos_recurrentes` | TeamOwned | `HasFactory` | Plantilla de gasto recurrente (Finanzas Fase 3). El comando `egresos:generar-recurrentes` crea egresos según `frecuencia`/`proxima_generacion`/vigencia. `user_id` es `nullOnDelete` (borrar al creador no borra la plantilla) |
+| `Empleado` | `empleados` | TeamOwned | `HasFactory` | Plantilla de personal (Finanzas Fase 3B); fuente del comando `nomina:generar`. `salario_fiscal`/`salario_real` mensuales, `clasificacion` (`tecnica`/`administrativa`/null), `fecha_entrada`/`fecha_baja`, `activo`. `user_id` y `empresa_id` `nullOnDelete` (borrar al creador o la empresa no borra al empleado, que es registro financiero) |
 
 ### Nota sobre `Banco`
 
@@ -39,8 +40,11 @@ Team ──* TeamInvitation
 Team ──* Empresa, Categoria       # Finanzas Fase 0 (tablas nuevas, sin relación aún con el dominio existente)
 Team ──* Egreso                   # Finanzas Fase 2
 Team ──* EgresoRecurrente         # Finanzas Fase 3
+Team ──* Empleado                 # Finanzas Fase 3B
 EgresoRecurrente ──< Egreso (egreso_recurrente_id)  # plantilla → egresos generados (nullOnDelete)
-Empresa ──? Egreso (empresa_id)   # opcional; Categoria ──? Egreso (categoria_id); User ──< Egreso (creador)
+Empleado ──< Egreso (empleado_id) # plantilla de personal → egresos de nómina (Fase 3B, nullOnDelete)
+Empresa ──? Egreso (empresa_id)   # opcional; Categoria ──? Egreso (categoria_id); User ──? Egreso (creador, nullOnDelete)
+Empresa ──? Empleado (empresa_id) # opcional, nullOnDelete; User ──? Empleado (creador, nullOnDelete)
 
 Archivo ──1 Factura (file_id_xml)    # XMLs tienen 1 factura
 Archivo ──* Movimiento (file_id)     # Estados de cuenta tienen muchos movimientos
@@ -197,8 +201,11 @@ El polling frontend considera "worker offline" si `status=queued` y `created_at 
 - `metodo_pago` enum(`transferencia`,`efectivo`,`tarjeta`,`otro`) nullable
 - `comprobante_path` (nullable, futuro), `origen` enum(`manual`,`recurrente`) default `manual`
 - `egreso_recurrente_id` (FK egresos_recurrentes, nullable, nullOnDelete, **Finanzas Fase 3**) — plantilla que lo generó (`origen='recurrente'`)
-- `user_id` (creador), timestamps. **Index**: `(team_id, fecha)`
-- Evidencia: `2026_06_29_000002_create_egresos_table.php`, `2026_06_29_000004_add_egreso_recurrente_id_to_egresos_table.php`
+- `empleado_id` (FK empleados, nullable, nullOnDelete, **Finanzas Fase 3B**) — empleado cuya nómina lo generó
+- `concepto_nomina` enum(`fiscal`,`complemento`) nullable (**Finanzas Fase 3B**) — discriminador de nómina; desacopla la idempotencia de la categoría (mutable por clasificación). NULL para egresos manuales/recurrentes
+- `user_id` (creador, **nullable + nullOnDelete desde Fase 3B**), timestamps. **Index**: `(team_id, fecha)`
+- **Unique**: `egresos_empleado_periodo_unique (empleado_id, fecha, concepto_nomina)` (**Fase 3B**) — un egreso de nómina por (empleado, fecha, concepto); NULLs múltiples permitidos → no afecta egresos manuales/recurrentes
+- Evidencia: `2026_06_29_000002_create_egresos_table.php`, `2026_06_29_000004_add_egreso_recurrente_id_to_egresos_table.php`, `2026_06_30_000002_add_empleado_to_egresos_table.php`
 
 #### `egresos_recurrentes` (Finanzas Fase 3)
 - `id`, `team_id` (FK cascade), `empresa_id` (FK nullable nullOnDelete), `categoria_id` (FK nullable nullOnDelete, requerida app, tipo=egreso)
@@ -208,6 +215,16 @@ El polling frontend considera "worker offline" si `status=queued` y `created_at 
 - `fecha_inicio` (date), `vigencia_tipo` enum(`indefinida`,`hasta_fecha`,`num_pagos`), `fecha_fin` (nullable), `num_pagos` (nullable), `pagos_generados` (int default 0)
 - `activo` (bool), `proxima_generacion` (date), `user_id`, timestamps. **Index**: `(team_id, activo, proxima_generacion)`
 - Evidencia: `2026_06_29_000003_create_egresos_recurrentes_table.php`
+
+#### `empleados` (Finanzas Fase 3B)
+- `id`, `team_id` (FK cascade), `empresa_id` (FK empresas, nullable, nullOnDelete)
+- `nombre`, `puesto` (nullable)
+- `fecha_entrada` (date), `fecha_baja` (date, nullable)
+- `salario_fiscal` (decimal 15,2, mensual), `salario_real` (decimal 15,2, mensual)
+- `clasificacion` enum(`tecnica`,`administrativa`) nullable — define a qué categoría va la parte fiscal de la nómina
+- `activo` (bool, default true)
+- `user_id` (creador, nullable, nullOnDelete), timestamps. **Index**: `(team_id, activo)`
+- Evidencia: `2026_06_30_000001_create_empleados_table.php`
 
 #### `categorias` (Finanzas Fase 0)
 - `id`, `team_id` (FK, cascade), `nombre`
@@ -232,6 +249,7 @@ El polling frontend considera "worker offline" si `status=queued` y `created_at 
 - `Categoria`: `activo => boolean`, `orden => integer`
 - `Egreso`: `fecha => date`, `monto => decimal:2`
 - `EgresoRecurrente`: `monto => decimal:2`, `fecha_inicio`/`fecha_fin`/`proxima_generacion => date`, `activo => boolean`, `dia_del_mes`/`num_pagos`/`pagos_generados => integer`
+- `Empleado`: `fecha_entrada`/`fecha_baja => date`, `salario_fiscal`/`salario_real => decimal:2`, `activo => boolean`
 - `User`: `email_verified_at => datetime`, `password => hashed` (via `casts()` method en Laravel 12)
 
 ---
@@ -245,6 +263,7 @@ Localizadas en `database/factories/`:
 - `EmpresaFactory`, `CategoriaFactory` (Finanzas Fase 0; `CategoriaFactory::ingreso()` state para categorías de ingreso).
 - `EgresoFactory` (Finanzas Fase 2; default `origen='manual'`, categoría de egreso).
 - `EgresoRecurrenteFactory` (Finanzas Fase 3; default mensual, día 1, vigencia indefinida).
+- `EmpleadoFactory` (Finanzas Fase 3B; default activo, `clasificacion='administrativa'`, salarios fiscal 20000 / real 24000).
 
 No hay factories para `Conciliacion`, `BankFormat`, `Tolerancia`, `TeamInvitation` — se crean con `forceCreate` en los tests.
 

@@ -197,6 +197,23 @@ Comando + schedule documentados en `docs/operations.md` (sección Scheduler).
 
 ---
 
+## Empleados (Finanzas Fase 3B)
+
+Resource `employees` `->except('show')`. Plantilla de personal que el comando `nomina:generar` materializa en egresos de nómina. Modelo/columnas en español (`Empleado`); **rutas y Vue pages en inglés** (`employees`/`Employees`). **Acceso: solo owner del team en TODAS las habilidades** (incluido `viewAny`/`view`) vía `EmpleadoPolicy` — los salarios (fiscal/real) son sensibles. Un no-owner recibe **403**. Tenancy por `TeamOwned` (registro de otro team → 404 vía route-model binding). Validación en `EmpleadoRequest`: `empresa_id` requerida + `exists` scoped al team, `salario_fiscal`/`salario_real` > 0 con `salario_real >= salario_fiscal`, `fecha_baja >= fecha_entrada`, `clasificacion` ∈ tecnica/administrativa (nullable).
+
+| Método | URI | Controller@action | Nombre | Tipo respuesta |
+|---|---|---|---|---|
+| GET | `/employees` | `EmpleadoController@index` | `employees.index` | Inertia `Employees/Index` (props: `empleados` paginator, `empresas`) |
+| GET | `/employees/create` | `EmpleadoController@create` | `employees.create` | Inertia `Employees/Create` |
+| POST | `/employees` | `EmpleadoController@store` | `employees.store` | Redirect (set `user_id`, `team_id`) |
+| GET | `/employees/{employee}/edit` | `EmpleadoController@edit` | `employees.edit` | Inertia `Employees/Create` con `empleado` |
+| PUT/PATCH | `/employees/{employee}` | `EmpleadoController@update` | `employees.update` | Redirect |
+| DELETE | `/employees/{employee}` | `EmpleadoController@destroy` | `employees.destroy` | Redirect (la nómina ya generada se conserva) |
+
+Comando `nomina:generar` + schedule documentados en `docs/operations.md`.
+
+---
+
 ## Settings — Tolerance
 
 | Método | URI | Controller@action | Nombre | Autorización |
