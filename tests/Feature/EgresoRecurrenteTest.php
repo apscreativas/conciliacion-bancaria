@@ -3,11 +3,14 @@
 use App\Models\Categoria;
 use App\Models\EgresoRecurrente;
 use App\Models\User;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 use function Pest\Laravel\actingAs;
 
 uses(RefreshDatabase::class);
+
+afterEach(fn () => Carbon::setTestNow());
 
 function catEgreso(int $teamId): Categoria
 {
@@ -77,6 +80,30 @@ it('rejects quincenal frequency in fase 3', function () {
         'frecuencia' => 'quincenal', 'dia_del_mes' => 1, 'ajuste_dia_habil' => 'ninguno',
         'fecha_inicio' => '2026-06-01', 'vigencia_tipo' => 'indefinida',
     ])->assertSessionHasErrors('frecuencia');
+});
+
+it('on reactivation resumes proxima_generacion from today, not the stale past date', function () {
+    Carbon::setTestNow('2026-06-15');
+    $user = User::factory()->create();
+    $cat = catEgreso($user->current_team_id);
+    $t = EgresoRecurrente::factory()->create([
+        'team_id' => $user->current_team_id, 'user_id' => $user->id, 'categoria_id' => $cat->id,
+        'frecuencia' => 'mensual', 'dia_del_mes' => 1, 'ajuste_dia_habil' => 'ninguno',
+        'fecha_inicio' => '2026-01-01', 'vigencia_tipo' => 'num_pagos', 'num_pagos' => 2,
+        'pagos_generados' => 2, 'activo' => false, 'proxima_generacion' => '2026-03-01',
+    ]);
+
+    actingAs($user)->put(route('recurring-expenses.update', $t->id), [
+        'descripcion' => $t->descripcion, 'monto' => $t->monto, 'categoria_id' => $cat->id,
+        'frecuencia' => 'mensual', 'dia_del_mes' => 1, 'ajuste_dia_habil' => 'ninguno',
+        'fecha_inicio' => '2026-01-01', 'vigencia_tipo' => 'num_pagos', 'num_pagos' => 5,
+        'activo' => true,
+    ])->assertRedirect(route('recurring-expenses.index'));
+
+    $t->refresh();
+    expect($t->activo)->toBeTrue();
+    // No reanuda desde 2026-03-01 (vencido) → no inunda con egresos retroactivos.
+    expect($t->proxima_generacion->toDateString())->toBe('2026-07-01');
 });
 
 it('denies access to a template from another team (404)', function () {

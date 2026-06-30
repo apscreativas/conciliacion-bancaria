@@ -2,10 +2,10 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\EnforcesTeamOwnership;
+use App\Http\Controllers\Concerns\ResolvesExpenseOptions;
 use App\Http\Requests\EgresoRequest;
-use App\Models\Categoria;
 use App\Models\Egreso;
-use App\Models\Empresa;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -13,6 +13,9 @@ use Inertia\Response;
 
 class EgresoController extends Controller
 {
+    use EnforcesTeamOwnership;
+    use ResolvesExpenseOptions;
+
     public function index(Request $request): Response
     {
         $teamId = auth()->user()->current_team_id;
@@ -134,35 +137,5 @@ class EgresoController extends Controller
         $expense->delete();
 
         return back()->with('success', 'Egreso eliminado.');
-    }
-
-    /**
-     * Defense-in-depth de tenancy (CLAUDE.md §1.3): aun con el global scope de TeamOwned,
-     * los controllers re-verifican team_id sobre el modelo bindeado.
-     */
-    private function ensureOwnTeam(Egreso $expense): void
-    {
-        if ($expense->team_id !== auth()->user()->current_team_id) {
-            abort(403);
-        }
-    }
-
-    private function empresasActivas(int $teamId)
-    {
-        return Empresa::where('team_id', $teamId)
-            ->where('activo', true)
-            ->orderBy('orden')
-            ->orderBy('nombre')
-            ->get(['id', 'nombre', 'color']);
-    }
-
-    private function categoriasEgreso(int $teamId)
-    {
-        return Categoria::where('team_id', $teamId)
-            ->where('activo', true)
-            ->where('tipo', 'egreso')
-            ->orderBy('orden')
-            ->orderBy('nombre')
-            ->get(['id', 'nombre', 'grupo']);
     }
 }

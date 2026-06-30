@@ -16,6 +16,7 @@
     "Fecha de inicio": "Start date",
     "Vigencia": "Validity",
     "Indefinida": "Indefinite",
+    "Hasta :fecha": "Until :fecha",
     "Hasta una fecha": "Until a date",
     "Número de pagos": "Number of payments",
     "Fecha de fin": "End date",

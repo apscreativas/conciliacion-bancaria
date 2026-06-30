@@ -2,10 +2,10 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\EnforcesTeamOwnership;
+use App\Http\Controllers\Concerns\ResolvesExpenseOptions;
 use App\Http\Requests\EgresoRecurrenteRequest;
-use App\Models\Categoria;
 use App\Models\EgresoRecurrente;
-use App\Models\Empresa;
 use App\Services\Finance\RecurrenceCalculator;
 use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
@@ -14,6 +14,9 @@ use Inertia\Response;
 
 class EgresoRecurrenteController extends Controller
 {
+    use EnforcesTeamOwnership;
+    use ResolvesExpenseOptions;
+
     public function index(): Response
     {
         $teamId = auth()->user()->current_team_id;
@@ -22,7 +25,8 @@ class EgresoRecurrenteController extends Controller
             ->with(['empresa:id,nombre,color', 'categoria:id,nombre'])
             ->orderByDesc('activo')
             ->orderBy('proxima_generacion')
-            ->get();
+            ->paginate(25)
+            ->withQueryString();
 
         return Inertia::render('RecurringExpenses/Index', [
             'plantillas' => $plantillas,
@@ -79,10 +83,21 @@ class EgresoRecurrenteController extends Controller
         $data = $request->validated();
         $data['activo'] = $request->boolean('activo');
 
-        // Si aún no ha generado ningún egreso, recalcular la próxima generación según el nuevo schedule.
+        $reactivando = ! $recurringExpense->activo && $data['activo'];
+
         if ($recurringExpense->pagos_generados === 0) {
+            // Aún no genera nada: recalcular la próxima generación según el nuevo schedule.
             $data['proxima_generacion'] = $calc->firstOccurrence(
                 Carbon::parse($data['fecha_inicio']),
+                (int) $data['dia_del_mes'],
+                $data['frecuencia'],
+            )->toDateString();
+        } elseif ($reactivando) {
+            // Reactivar una plantilla con historial: reanudar desde HOY, no desde su
+            // proxima_generacion vencida, para no disparar una avalancha de egresos retroactivos.
+            $anchor = Carbon::parse($data['fecha_inicio'])->max(Carbon::today());
+            $data['proxima_generacion'] = $calc->firstOccurrence(
+                $anchor,
                 (int) $data['dia_del_mes'],
                 $data['frecuencia'],
             )->toDateString();
@@ -100,31 +115,5 @@ class EgresoRecurrenteController extends Controller
         $recurringExpense->delete();
 
         return back()->with('success', 'Plantilla recurrente eliminada.');
-    }
-
-    private function ensureOwnTeam(EgresoRecurrente $plantilla): void
-    {
-        if ($plantilla->team_id !== auth()->user()->current_team_id) {
-            abort(403);
-        }
-    }
-
-    private function empresasActivas(int $teamId)
-    {
-        return Empresa::where('team_id', $teamId)
-            ->where('activo', true)
-            ->orderBy('orden')
-            ->orderBy('nombre')
-            ->get(['id', 'nombre', 'color']);
-    }
-
-    private function categoriasEgreso(int $teamId)
-    {
-        return Categoria::where('team_id', $teamId)
-            ->where('activo', true)
-            ->where('tipo', 'egreso')
-            ->orderBy('orden')
-            ->orderBy('nombre')
-            ->get(['id', 'nombre']);
     }
 }

@@ -130,6 +130,62 @@ it('generates per team with the correct team_id', function () {
     expect(egresosDe($tB)->first()->team_id)->toBe($userB->current_team_id);
 });
 
+it('enforces one egreso per (plantilla, fecha) at the DB level', function () {
+    $user = User::factory()->create();
+    $t = plantillaRecurrente($user, ['dia_del_mes' => 1, 'proxima_generacion' => '2026-06-01']);
+
+    $payload = [
+        'team_id' => $user->current_team_id, 'categoria_id' => $t->categoria_id,
+        'egreso_recurrente_id' => $t->id, 'fecha' => '2026-06-01', 'monto' => 100,
+        'descripcion' => 'x', 'origen' => 'recurrente', 'user_id' => $user->id,
+    ];
+    Egreso::create($payload);
+
+    expect(fn () => Egreso::create(['descripcion' => 'y'] + $payload))
+        ->toThrow(\Illuminate\Database\QueryException::class);
+});
+
+it('counts an already-existing period toward pagos_generados without duplicating it', function () {
+    Carbon::setTestNow('2026-06-15');
+    $user = User::factory()->create();
+    $t = plantillaRecurrente($user, [
+        'frecuencia' => 'mensual', 'dia_del_mes' => 1, 'proxima_generacion' => '2026-06-01',
+        'vigencia_tipo' => 'num_pagos', 'num_pagos' => 2,
+    ]);
+
+    // El egreso de junio ya existe (alta manual o corrida previa interrumpida).
+    Egreso::create([
+        'team_id' => $user->current_team_id, 'categoria_id' => $t->categoria_id,
+        'egreso_recurrente_id' => $t->id, 'fecha' => '2026-06-01', 'monto' => $t->monto,
+        'descripcion' => $t->descripcion, 'origen' => 'recurrente', 'user_id' => $user->id,
+    ]);
+
+    $this->artisan('egresos:generar-recurrentes')->assertSuccessful();
+
+    // No se duplica junio, y el periodo preexistente SÍ cuenta para la vigencia num_pagos.
+    expect(egresosDe($t)->count())->toBe(1);
+    $t->refresh();
+    expect($t->pagos_generados)->toBe(1);
+    expect($t->proxima_generacion->toDateString())->toBe('2026-07-01');
+});
+
+it('does not generate a payment dated after fecha_fin when habil_siguiente crosses the month', function () {
+    // 2026-05-31 es domingo → habil_siguiente lo empuja a 2026-06-01 (> fecha_fin).
+    Carbon::setTestNow('2026-06-15');
+    $user = User::factory()->create();
+    $t = plantillaRecurrente($user, [
+        'frecuencia' => 'mensual', 'dia_del_mes' => 31, 'proxima_generacion' => '2026-05-31',
+        'ajuste_dia_habil' => 'habil_siguiente',
+        'vigencia_tipo' => 'hasta_fecha', 'fecha_fin' => '2026-05-31',
+    ]);
+
+    $this->artisan('egresos:generar-recurrentes')->assertSuccessful();
+
+    expect(egresosDe($t)->count())->toBe(0); // el pago caería el 2026-06-01, fuera de vigencia
+    $t->refresh();
+    expect($t->activo)->toBeFalse();
+});
+
 it('does not persist anything on --dry-run', function () {
     Carbon::setTestNow('2026-06-15');
     $user = User::factory()->create();

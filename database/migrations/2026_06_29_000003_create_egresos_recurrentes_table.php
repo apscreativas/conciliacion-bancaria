@@ -34,7 +34,9 @@ return new class extends Migration
             $table->boolean('activo')->default(true);
             $table->date('proxima_generacion');
 
-            $table->foreignId('user_id')->constrained()->cascadeOnDelete();
+            // nullOnDelete: borrar al usuario que la creó NO debe borrar la plantilla
+            // (el team sigue generando ese fijo). La plantilla es un registro financiero.
+            $table->foreignId('user_id')->nullable()->constrained()->nullOnDelete();
             $table->timestamps();
 
             $table->index(['team_id', 'activo', 'proxima_generacion']);

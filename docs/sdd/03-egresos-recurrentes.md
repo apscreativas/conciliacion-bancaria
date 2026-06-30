@@ -37,13 +37,12 @@ Schedule: `routes/console.php` → `Schedule::command(...)->dailyAt('01:00')->wi
 - **Día hábil:** fin de semana → hábil anterior/siguiente (sin festivos).
 - **Vigencia:** `num_pagos` corta al llegar a N; `hasta_fecha` corta cuando la próxima excede `fecha_fin`; ambas marcan `activo=false`.
 - **Tenancy:** el comando setea `team_id` explícito (sin Auth, el global scope no aplica); el CRUD usa `TeamOwned` + `ensureOwnTeam` (404/422 cross-team).
-- **`update`** recomputa `proxima_generacion` solo si `pagos_generados==0` (no re-agenda una recurrencia ya en marcha).
+- **`update`** recomputa `proxima_generacion` si `pagos_generados==0` (re-agenda según el nuevo schedule) **o** al **reactivar** una plantilla con historial (`activo` false→true): en ese caso ancla en `max(fecha_inicio, hoy)` para **reanudar desde hoy** y no disparar una avalancha de egresos retroactivos.
 
 ## 7. Plan de pruebas
 - **Unit `RecurrenceCalculatorTest`:** `nextDate` por frecuencia, clamp y recuperación de día, `applyDiaHabil` (fin de semana → hábil).
-- **Feature `GenerarEgresosRecurrentesTest`** (con `Carbon::setTestNow`): genera una vez + **idempotencia** en re-corrida; **catch-up** (2 periodos atrasados → 3 egresos); vigencia `num_pagos`/`hasta_fecha` (corta + `activo=false`); **día hábil** (sábado → viernes); multi-team (team_id correcto); `--dry-run` no persiste ni avanza.
-- **Feature `EgresoRecurrenteTest`:** CRUD (miembro del team) + validación (monto>0, categoría tipo=egreso, quincenal rechazada, reglas condicionales de vigencia) + tenancy 404.
-- Resultado: **20 passed**. Suite completa: **107 passed / 13 failed** (13 baseline; 0 regresiones nuevas).
+- **Feature `GenerarEgresosRecurrentesTest`** (con `Carbon::setTestNow`): genera una vez + **idempotencia** en re-corrida; **catch-up** (2 periodos atrasados → 3 egresos); vigencia `num_pagos`/`hasta_fecha` (corta + `activo=false`); **día hábil** (sábado → viernes); multi-team (team_id correcto); `--dry-run` no persiste ni avanza. Hardening: **índice único** `(egreso_recurrente_id, fecha)` rechaza duplicados; periodo preexistente **cuenta** para `num_pagos` sin duplicar; `habil_siguiente` que cruza el mes **no** genera después de `fecha_fin`.
+- **Feature `EgresoRecurrenteTest`:** CRUD (miembro del team) + validación (monto>0, categoría tipo=egreso, quincenal rechazada, reglas condicionales de vigencia) + tenancy 404 + **reactivación** reancla `proxima_generacion` en hoy.
 
 ## 8. Impacto en lo existente
 - Migraciones aditivas; comando + schedule nuevos; rutas/páginas nuevas; botón en Egresos. **No toca** conciliación/matcher.
@@ -51,9 +50,12 @@ Schedule: `routes/console.php` → `Schedule::command(...)->dailyAt('01:00')->wi
 ## 9. Riesgos y mitigaciones
 | Riesgo | Impacto | Mitigación |
 |---|---|---|
-| Doble generación (cron corre 2×) | Egresos duplicados | Idempotencia (existencia + avance en transacción); `withoutOverlapping` |
-| Cron caído varios periodos | Huecos en contabilidad | Catch-up de periodos faltantes (tope 24 + log) |
+| Doble generación (cron corre 2×, manual vs cron, multi-servidor) | Egresos duplicados | Índice único `(egreso_recurrente_id, fecha)` + `exists()` + `withoutOverlapping`/`onOneServer`; el `INSERT` perdedor se rechaza y se trata como ya generado |
+| Cron caído varios periodos | Huecos en contabilidad | Catch-up de periodos faltantes (tope 24 + `warn` + `Log::warning`) |
 | Borrar plantilla borra egresos | Pérdida de histórico | `nullOnDelete` en `egreso_recurrente_id` |
+| Borrar al creador borra la plantilla | El team deja de generar el fijo | `user_id` con `nullOnDelete` |
+| Pago ajustado cae fuera de vigencia | Egreso después de `fecha_fin` | `hasta_fecha` se evalúa contra la fecha de pago ajustada, no el día nominal |
+| Reactivar plantilla vencida | Avalancha de egresos retroactivos | `update` re-ancla `proxima_generacion` en hoy al reactivar |
 | Día 31 en mes corto / fin de semana | Fecha inválida o no hábil | `nextDate` clamp + `applyDiaHabil`, cubiertos por unit tests |
 | Recurrencia infinita (bug de fechas) | Runaway | Tope de 24 iteraciones/plantilla/corrida |
 

@@ -11,4 +11,6 @@ Artisan::command('inspire', function () {
 // Finanzas Fase 3: genera egresos de plantillas recurrentes vencidas (idempotente).
 // Diario; cada plantilla decide qué le toca vía proxima_generacion. Requiere cron
 // `* * * * * php artisan schedule:run` en prod (en Herd local: `php artisan schedule:work`).
-Schedule::command('egresos:generar-recurrentes')->dailyAt('01:00')->withoutOverlapping();
+// onOneServer: en despliegue multi-servidor solo UN host corre el job (withoutOverlapping
+// es por-host). El índice único egresos_recurrente_periodo_unique es el respaldo final.
+Schedule::command('egresos:generar-recurrentes')->dailyAt('01:00')->withoutOverlapping()->onOneServer();

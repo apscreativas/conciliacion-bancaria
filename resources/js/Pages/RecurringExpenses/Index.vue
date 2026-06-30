@@ -6,6 +6,8 @@ import PrimaryButton from "@/Components/PrimaryButton.vue";
 import SecondaryButton from "@/Components/SecondaryButton.vue";
 import DangerButton from "@/Components/DangerButton.vue";
 import EmptyState from "@/Components/EmptyState.vue";
+import { formatCurrency, formatDate } from "@/utils/format";
+import { trans } from "laravel-vue-i18n";
 import { ref } from "vue";
 
 interface Option {
@@ -31,7 +33,7 @@ interface Plantilla {
 }
 
 defineProps<{
-    plantillas: Plantilla[];
+    plantillas: { data: Plantilla[]; links: Array<any> };
     empresas: Option[];
     categorias: Option[];
 }>();
@@ -44,16 +46,15 @@ const frecuenciaLabels: Record<string, string> = {
     anual: "Anual",
 };
 
-const formatCurrency = (a: number) =>
-    new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" }).format(Number(a));
-const formatDate = (d: string) =>
-    new Intl.DateTimeFormat("es-MX", { dateStyle: "medium" }).format(new Date(d.slice(0, 10) + "T00:00:00"));
-
 const vigencia = (p: Plantilla) => {
-    if (p.vigencia_tipo === "hasta_fecha" && p.fecha_fin) return `Hasta ${formatDate(p.fecha_fin)}`;
-    if (p.vigencia_tipo === "num_pagos") return `${p.pagos_generados}/${p.num_pagos} pagos`;
-    return "Indefinida";
+    if (p.vigencia_tipo === "hasta_fecha" && p.fecha_fin) return trans("Hasta :fecha", { fecha: formatDate(p.fecha_fin) });
+    if (p.vigencia_tipo === "num_pagos") return `${p.pagos_generados}/${p.num_pagos} ${trans("pagos")}`;
+    return trans("Indefinida");
 };
+
+function paginationLabel(html: string): string {
+    return html.replace(/&laquo;/g, "«").replace(/&raquo;/g, "»").replace(/<[^>]*>/g, "");
+}
 
 const confirmingDeletion = ref(false);
 const toDelete = ref<Plantilla | null>(null);
@@ -100,7 +101,7 @@ const destroy = () => {
 
                 <div class="bg-white dark:bg-gray-800 overflow-hidden shadow-sm sm:rounded-lg">
                     <EmptyState
-                        v-if="plantillas.length === 0"
+                        v-if="plantillas.data.length === 0"
                         :title="$t('No hay plantillas recurrentes.')"
                         :description="$t('Crea una plantilla para que un gasto fijo se registre solo cada periodo.')"
                     />
@@ -118,7 +119,7 @@ const destroy = () => {
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
-                            <tr v-for="p in plantillas" :key="p.id" :class="{ 'opacity-50': !p.activo }">
+                            <tr v-for="p in plantillas.data" :key="p.id" :class="{ 'opacity-50': !p.activo }">
                                 <td class="px-4 py-3 text-sm text-gray-900 dark:text-gray-100">
                                     <div class="font-medium">{{ p.descripcion }}</div>
                                     <div v-if="p.empresa" class="text-xs" :style="{ color: p.empresa.color || '#9ca3af' }">{{ p.empresa.nombre }}</div>
@@ -141,6 +142,21 @@ const destroy = () => {
                             </tr>
                         </tbody>
                     </table>
+                </div>
+
+                <!-- Paginación -->
+                <div v-if="plantillas.links.length > 3" class="mt-6 flex flex-wrap justify-center -space-x-px">
+                    <template v-for="(link, key) in plantillas.links" :key="key">
+                        <div v-if="link.url === null" class="px-4 py-2 text-sm text-gray-400 border dark:border-gray-700" v-text="paginationLabel(link.label)" />
+                        <Link
+                            v-else
+                            :href="link.url"
+                            preserve-scroll
+                            class="px-4 py-2 text-sm border dark:border-gray-700"
+                            :class="link.active ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'"
+                            v-text="paginationLabel(link.label)"
+                        />
+                    </template>
                 </div>
             </div>
         </div>

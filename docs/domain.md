@@ -19,8 +19,8 @@ Todos los modelos de dominio usan el trait `TeamOwned` salvo los marcados como "
 | `Tolerancia` | `tolerancias` | TeamOwned | — | Configuración `(monto, dias)` por team. Solo 1 registro por team |
 | `Empresa` | `empresas` | TeamOwned | `HasFactory` | Unidad de negocio del grupo (Finanzas Fase 0). Dimensión para clasificar ingresos/egresos por empresa |
 | `Categoria` | `categorias` | TeamOwned | `HasFactory` | Catálogo de cuentas gerencial (Finanzas Fase 0). Clasifica ingresos y egresos; arma el Estado de Resultados |
-| `Egreso` | `egresos` | TeamOwned | `HasFactory` | Gasto manual o generado (Finanzas Fase 2/3). Clasificado por `empresa_id` (opcional) + `categoria_id` (egreso). `origen` manual/recurrente; `egreso_recurrente_id` si vino de plantilla |
-| `EgresoRecurrente` | `egresos_recurrentes` | TeamOwned | `HasFactory` | Plantilla de gasto recurrente (Finanzas Fase 3). El comando `egresos:generar-recurrentes` crea egresos según `frecuencia`/`proxima_generacion`/vigencia |
+| `Egreso` | `egresos` | TeamOwned | `HasFactory` | Gasto manual o generado (Finanzas Fase 2/3). Clasificado por `empresa_id` (opcional) + `categoria_id` (egreso). `origen` manual/recurrente; `egreso_recurrente_id` si vino de plantilla. Índice único `egresos_recurrente_periodo_unique` sobre `(egreso_recurrente_id, fecha)` garantiza un solo egreso recurrente por periodo (NULLs múltiples permitidos → no afecta egresos manuales) |
+| `EgresoRecurrente` | `egresos_recurrentes` | TeamOwned | `HasFactory` | Plantilla de gasto recurrente (Finanzas Fase 3). El comando `egresos:generar-recurrentes` crea egresos según `frecuencia`/`proxima_generacion`/vigencia. `user_id` es `nullOnDelete` (borrar al creador no borra la plantilla) |
 
 ### Nota sobre `Banco`
 
