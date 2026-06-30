@@ -115,7 +115,8 @@
             'semestral' => 'Semestral',
             'anual' => 'Anual',
         ][$granularidad] ?? 'Mensual';
-        $fmt = fn ($v) => '$'.number_format((float) $v, 2);
+        // El signo va ANTES del '$' (p.ej. -$1,234.50), consistente con el dashboard (Intl).
+        $fmt = fn ($v) => ((float) $v < 0 ? '-$' : '$').number_format(abs((float) $v), 2);
         $pct = fn ($v) => number_format((float) $v * 100, 1).'%';
     @endphp
 

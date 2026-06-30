@@ -3,6 +3,7 @@ import AuthenticatedLayout from "@/Layouts/AuthenticatedLayout.vue";
 import { Head, router, usePage } from "@inertiajs/vue3";
 import { ref, computed, onUnmounted } from "vue";
 import { formatCurrency } from "@/utils/format";
+import { trans } from "laravel-vue-i18n";
 import axios from "axios";
 
 interface Pnl {
@@ -161,14 +162,10 @@ const maxAbs = computed(() => {
 const barWidth = (amount: number): string =>
     `${Math.min(100, (Math.abs(amount) / maxAbs.value) * 100)}%`;
 
-// Margen por empresa: ancho de barra normalizado al ingreso máximo entre empresas.
-const maxEmpresaIngreso = computed(() => {
-    const vals = props.porEmpresa.map((e) => Number(e.pnl.ingresos.total));
-    return Math.max(...vals, 1);
-});
-
+// Margen por empresa: el ancho de la barra ES el margen neto (%), no el ingreso —
+// así la barra refleja lo que dice el título y coincide con el PDF. Negativo → 0.
 const empresaBarWidth = (e: EmpresaPnl): string =>
-    `${Math.min(100, (Number(e.pnl.ingresos.total) / maxEmpresaIngreso.value) * 100)}%`;
+    `${Math.min(100, Math.max(0, Number(e.pnl.margen_neto) * 100))}%`;
 
 // ─── Export PDF (polling, espeja Reconciliation/Status.vue) ───
 const exportProcessing = ref(false);
@@ -204,7 +201,7 @@ const startExport = async () => {
         }
     } catch (e) {
         exportProcessing.value = false;
-        showToast("Error iniciando exportación. Intente de nuevo.");
+        showToast(trans("No se pudo iniciar la exportación. Intenta de nuevo."));
     }
 };
 
@@ -221,14 +218,21 @@ const pollExport = (id: number) => {
                 clearActiveInterval();
                 exportProcessing.value = false;
                 showToast(
-                    "La exportación falló: " +
-                        (res.data.error_message || "Error desconocido"),
+                    trans("La exportación falló") +
+                        ": " +
+                        (res.data.error_message || trans("Error desconocido")),
                 );
+            } else if (res.data.is_offline) {
+                // Lleva > 2 min en cola: probablemente el worker de exports está caído.
+                // Cortamos el polling y avisamos en vez de sondear indefinidamente.
+                clearActiveInterval();
+                exportProcessing.value = false;
+                showToast(trans("La exportación está tardando. Verifica que el worker de la cola esté activo."));
             }
         } catch (e) {
             clearActiveInterval();
             exportProcessing.value = false;
-            showToast("Error consultando estado de exportación.");
+            showToast(trans("No se pudo consultar el estado de la exportación."));
         }
     }, 2000);
 };

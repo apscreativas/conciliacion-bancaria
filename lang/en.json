@@ -1,5 +1,10 @@
 {
     "Dashboard ejecutivo": "Executive Dashboard",
+    "No se pudo iniciar la exportación. Intenta de nuevo.": "Could not start the export. Please try again.",
+    "La exportación falló": "The export failed",
+    "Error desconocido": "Unknown error",
+    "La exportación está tardando. Verifica que el worker de la cola esté activo.": "The export is taking too long. Check that the queue worker is running.",
+    "No se pudo consultar el estado de la exportación.": "Could not check the export status.",
     "Consolidado": "Consolidated",
     "Semestral": "Semiannual",
     "Granularidad": "Granularity",
