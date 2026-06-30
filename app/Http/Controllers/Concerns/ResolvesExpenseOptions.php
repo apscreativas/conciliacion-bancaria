@@ -31,4 +31,14 @@ trait ResolvesExpenseOptions
             ->orderBy('nombre')
             ->get(['id', 'nombre', 'grupo']);
     }
+
+    protected function categoriasIngreso(int $teamId): Collection
+    {
+        return Categoria::where('team_id', $teamId)
+            ->where('activo', true)
+            ->where('tipo', 'ingreso')
+            ->orderBy('orden')
+            ->orderBy('nombre')
+            ->get(['id', 'nombre', 'grupo']);
+    }
 }

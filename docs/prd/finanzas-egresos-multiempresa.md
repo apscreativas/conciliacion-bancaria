@@ -275,7 +275,8 @@ Cada fase es entregable, probable y no rompe lo anterior. Orden = dependencias.
 - **Criterios:** alta/baja/edición de empleados; el command genera las dos quincenas con fiscal + complemento por empleado, fechadas en el día hábil correcto (incluye caso fin de mes en domingo → viernes); baja deja de generar a partir de su quincena; re-ejecutar no duplica; tenancy test; documentar en `docs/operations.md`.
 - **Riesgo:** medio (job + dinero). Idempotencia por quincena, ajuste de día hábil y altas/bajas a mitad de periodo son lo crítico a testear. Depende de Fase 2 (tabla `egresos`) y Fase 0. Reusa la infra de scheduler montada en Fase 3 (ver su nota); `nomina:generar` también es ejecutable a mano.
 
-### Fase 4 — Ingresos manuales (efectivo)
+### Fase 4 — Ingresos manuales (efectivo)  ✅ CERRADA (2026-06-30)
+> Implementada en `feature/finanzas-fase4`. SDD: `docs/sdd/05-ingresos-manuales.md`. Espejo de Fase 2: tabla `ingresos_manuales` + CRUD `/cash-income` (índice filtrado mes/año/empresa/categoría + totales), acceso para cualquier miembro del team, `categoria_id` requerida `tipo=ingreso`, `monto>0`, `metodo` efectivo/otro, campo `cliente`. Es una de las fuentes de ingresos del P&L (Fase 5). 8 tests verdes, 0 regresiones; aislado del motor.
 - **Objetivo:** registrar ingresos reales que no pasan por banco.
 - **Alcance:** migración `ingresos_manuales`; CRUD `/cash-income`; misma estructura de filtros que egresos; categoría tipo=ingreso; empresa.
 - **Criterios:** alta/edición/baja; se integran a la fuente de ingresos del P&L; tenancy test.

@@ -244,6 +244,19 @@ El comando `nomina:generar` (`app/Console/Commands/GenerarNomina.php`, schedule 
 
 ---
 
+## 12. Ingresos manuales (Finanzas Fase 4)
+
+El CRUD `/cash-income` (`IngresoManualController`, modelo `IngresoManual`) registra los **ingresos reales que NO pasan por banco** — pagos en efectivo. Es el espejo de los egresos manuales (Fase 2) con categorías de ingreso. Reglas:
+
+- **Naturaleza del registro:** efectivo no bancario. El campo `metodo` es enum(`efectivo`,`otro`) con default `efectivo` (no el set de 4 métodos de egresos). El ingreso bancario ya vive en `conciliacions` (factura ↔ abono conciliado); esto captura **solo** el efectivo que el banco no registra.
+- **Categoría tipo=ingreso:** `categoria_id` es requerida a nivel app y validada con `exists` scoped al team **y `tipo=ingreso`** — una categoría de egreso se rechaza (422). En DB es nullable con `nullOnDelete` (borrar la categoría no borra el ingreso, queda "Sin categoría").
+- **Empresa opcional:** `empresa_id` opcional + `exists` scoped al team; `nullOnDelete`. `monto` > 0 (`gt:0`); `cliente` opcional.
+- **Acceso:** **cualquier miembro del team** (captura operativa, igual que egresos; sin owner-gate). `store` setea `team_id` + `user_id` (creador). Tenancy por `TeamOwned`: un registro de otro team → 404.
+- **Fuente del P&L:** es una de las dos fuentes de **ingresos** del Estado de Resultados (Fase 5), junto con los ingresos bancarios conciliados con `empresa_id` asignado (ver PRD §4.1). No hay riesgo de doble conteo: el efectivo manual no aparece en `movimientos`.
+- **Totales:** `total` y `totalsByCategoria` (con bucket "Sin categoría") se calculan sobre el conjunto filtrado, no solo la página; `per_page` con whitelist (basura → 25, evita `paginate(0)` → 500).
+
+---
+
 ## Referencias
 
 - `app/Services/Reconciliation/MatcherService.php`
@@ -255,3 +268,4 @@ El comando `nomina:generar` (`app/Console/Commands/GenerarNomina.php`, schedule 
 - `app/Http/Middleware/SetGlobalDateFilters.php`
 - `app/Console/Commands/GenerarNomina.php`
 - `app/Services/Finance/PayrollCalculator.php`
+- `app/Http/Controllers/IngresoManualController.php`
