@@ -285,6 +285,20 @@ No hay factories para `Conciliacion`, `BankFormat`, `Tolerancia`, `TeamInvitatio
 
 ---
 
+## Servicios de cálculo financiero (sin esquema)
+
+### `ProfitLossService` (Finanzas Fase 5)
+
+`App\Services\Finance\ProfitLossService` (POPO sin estado, **sin migración** — Fase 5 no crea ni modifica tablas) arma el Estado de Resultados (P&L) de un periodo/empresa. Solo-lectura: combina las 3 fuentes ya materializadas, sin tocar el motor de conciliación:
+
+- `conciliacions.monto_aplicado` fechado por `movimientos.fecha` (join por `movimiento_id`) → ingreso bancario conciliado.
+- `ingresos_manuales.monto` → ingreso efectivo.
+- `egresos.monto` agrupado por `categorias.grupo` (`costo_venta`/`gasto_operativo`/`abajo_ebitda`) → COGS/OPEX/abajo-EBITDA; residuo en `sin_clasificar`.
+
+`empresa_id` NULL = consolidado (incluye filas sin empresa). Tenancy por `TeamOwned`. Reglas de negocio y fórmula: `docs/business-rules.md` §13; diseño completo: `docs/sdd/06-profit-loss-service.md`.
+
+---
+
 ## Seeders
 
 - `DatabaseSeeder.php` — crea un usuario/team base y llama a `FinanzasCatalogoSeeder`.
