@@ -3,10 +3,12 @@
 namespace App\Http\Controllers;
 
 use App\Models\Conciliacion;
+use App\Models\Empresa;
 use App\Models\Factura;
 use App\Models\Movimiento;
 use App\Services\Reconciliation\MatcherService;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 
 class ReconciliationController extends Controller
@@ -277,7 +279,7 @@ class ReconciliationController extends Controller
         $groupIds = collect($groupsPager->items())->pluck('group_id');
 
         $details = Conciliacion::whereIn('group_id', $groupIds)
-            ->with(['factura', 'movimiento.archivo.bankFormat', 'user'])
+            ->with(['factura', 'movimiento.archivo.bankFormat', 'user', 'empresa'])
             ->get()
             ->groupBy('group_id');
 
@@ -306,6 +308,7 @@ class ReconciliationController extends Controller
                 'id' => $groupId,
                 'created_at' => $first->fecha_conciliacion ?? $first->created_at,
                 'user' => $first->user,
+                'empresa' => $first->empresa,
                 'invoices' => $invoices,
                 'movements' => $movements,
                 'total_invoices' => $totalInvoices,
@@ -318,6 +321,11 @@ class ReconciliationController extends Controller
 
         return Inertia::render('Reconciliation/History', [
             'reconciledGroups' => $groupsPager,
+            'empresas' => Empresa::where('team_id', $teamId)
+                ->where('activo', true)
+                ->orderBy('orden')
+                ->orderBy('nombre')
+                ->get(['id', 'nombre', 'color']),
             'filters' => [
                 'search' => $search,
                 'month' => $month,
@@ -639,5 +647,38 @@ class ReconciliationController extends Controller
         }
 
         return back()->with('success', 'Grupo de conciliación desvinculado exitosamente.');
+    }
+
+    /**
+     * Asigna (o des-asigna con null) la empresa de un grupo conciliado, a nivel group_id.
+     * Aditivo: NO toca el motor de matching ni montos. Espeja destroyGroup en tenancy.
+     */
+    public function updateGroupEmpresa(Request $request, $groupId): \Illuminate\Http\RedirectResponse
+    {
+        $teamId = auth()->user()->current_team_id;
+
+        $validated = $request->validate([
+            // 'present': el payload DEBE traer la clave (aunque sea null) — evita que un
+            // PATCH sin el campo des-asigne el grupo en silencio.
+            'empresa_id' => [
+                'present',
+                'nullable',
+                Rule::exists('empresas', 'id')->where(fn ($q) => $q->where('team_id', $teamId)),
+            ],
+        ]);
+
+        // Scope al team actual; opera sobre todas las filas del grupo.
+        $query = Conciliacion::where('group_id', $groupId)->where('team_id', $teamId);
+
+        // Existencia por separado: en MySQL update() devuelve filas CAMBIADAS, así que
+        // re-asignar la misma empresa (o des-asignar un grupo ya vacío) afectaría 0 filas
+        // y daría un 404 falso. Verificamos existencia antes de actualizar (idempotente).
+        if (! $query->clone()->exists()) {
+            abort(404);
+        }
+
+        $query->update(['empresa_id' => $validated['empresa_id']]);
+
+        return back()->with('success', 'Empresa asignada al grupo exitosamente.');
     }
 }

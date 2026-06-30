@@ -224,6 +224,68 @@ No hay feature flags en el código. Los cambios de comportamiento se manejan por
 
 ---
 
+## 11. Nómina quincenal (Finanzas Fase 3B)
+
+El comando `nomina:generar` (`app/Console/Commands/GenerarNomina.php`, schedule diario 01:30) materializa la nómina de los `empleados` activos como `egresos`. Reglas:
+
+- **Quincenas**: dos por mes — día **15** (Q1) y **último día del mes** (Q2). La fecha de **pago** se ajusta al **día hábil anterior** si cae en sábado/domingo (reusa `RecurrenceCalculator::applyDiaHabil` vía `PayrollCalculator`). Sin festivos en v1. La **fecha nominal** (15 / fin de mes, sin ajustar) define elegibilidad/periodo; la **fecha de pago** (ajustada) es la `fecha` del egreso.
+- **Mitad por quincena**: los salarios del empleado son **mensuales**; cada quincena genera la mitad. Fiscal = `salario_fiscal / 2`; complemento = `(salario_real - salario_fiscal) / 2` (redondeados a 2 decimales).
+- **Dos conceptos por quincena** (`concepto_nomina`): `fiscal` y `complemento`.
+- **Mapeo de categoría por clasificación** (por nombre exacto, categoría activa `tipo=egreso` del team):
+    - Parte **fiscal** de empleado `clasificacion='tecnica'` → **"Nómina técnica facturable"** (grupo `costo_venta`/COGS).
+    - Parte **fiscal** de empleado `administrativa` o sin clasificar (null) → **"Nómina fiscal"** (grupo `gasto_operativo`).
+    - Parte **complemento** (cualquier clasificación) → **"Nómina complemento / real"**.
+    - Si el team no tiene la categoría requerida, ese egreso se **omite** (se registra `Log::warning`); el comando no truena.
+- **Complemento ≤ 0 omitido**: si `salario_real == salario_fiscal` (o real < fiscal, imposible por validación) no se crea el egreso de complemento.
+- **Elegibilidad por fecha nominal**: no se genera una quincena cuya fecha **nominal** sea anterior a `fecha_entrada` ni posterior a `fecha_baja`. Por eso un alta a mitad de periodo (ej. día 16) **no** cobra la Q1 de ese mes, y una **baja a mitad de periodo** (ej. día 20) cobra la Q1 (nominal 15 ≤ 20) pero **no** la Q2 (nominal 30 > 20).
+- **Empleados inactivos** (`activo=false`) se omiten por completo.
+- **Idempotencia**: garantizada por el índice único `egresos_empleado_periodo_unique (empleado_id, fecha, concepto_nomina)` + `exists()` + `try/catch` de `QueryException`. Cambiar la `clasificacion` de un empleado entre corridas **no** duplica el egreso fiscal de una quincena ya generada (la clave es `concepto_nomina`, no la categoría).
+- **Origen**: los egresos de nómina se marcan `origen='recurrente'` y portan `empleado_id`.
+
+---
+
+## 12. Ingresos manuales (Finanzas Fase 4)
+
+El CRUD `/cash-income` (`IngresoManualController`, modelo `IngresoManual`) registra los **ingresos reales que NO pasan por banco** — pagos en efectivo. Es el espejo de los egresos manuales (Fase 2) con categorías de ingreso. Reglas:
+
+- **Naturaleza del registro:** efectivo no bancario. El campo `metodo` es enum(`efectivo`,`otro`) con default `efectivo` (no el set de 4 métodos de egresos). El ingreso bancario ya vive en `conciliacions` (factura ↔ abono conciliado); esto captura **solo** el efectivo que el banco no registra.
+- **Categoría tipo=ingreso:** `categoria_id` es requerida a nivel app y validada con `exists` scoped al team **y `tipo=ingreso`** — una categoría de egreso se rechaza (422). En DB es nullable con `nullOnDelete` (borrar la categoría no borra el ingreso, queda "Sin categoría").
+- **Empresa opcional:** `empresa_id` opcional + `exists` scoped al team; `nullOnDelete`. `monto` > 0 (`gt:0`); `cliente` opcional.
+- **Acceso:** **cualquier miembro del team** (captura operativa, igual que egresos; sin owner-gate). `store` setea `team_id` + `user_id` (creador). Tenancy por `TeamOwned`: un registro de otro team → 404.
+- **Fuente del P&L:** es una de las dos fuentes de **ingresos** del Estado de Resultados (Fase 5), junto con los ingresos bancarios conciliados con `empresa_id` asignado (ver PRD §4.1). No hay riesgo de doble conteo: el efectivo manual no aparece en `movimientos`.
+- **Totales:** `total` y `totalsByCategoria` (con bucket "Sin categoría") se calculan sobre el conjunto filtrado, no solo la página; `per_page` con whitelist (basura → 25, evita `paginate(0)` → 500).
+
+---
+
+## 13. Estado de Resultados (Finanzas Fase 5)
+
+El servicio `App\Services\Finance\ProfitLossService` (POPO sin estado, sin migración) arma el **Estado de Resultados (P&L) gerencial, base flujo** de un periodo. Método único `forPeriod(Carbon $desde, Carbon $hasta, ?int $empresaId = null): array`. SDD ampliado: `docs/sdd/06-profit-loss-service.md`.
+
+### 13.1 Las 3 fuentes y el mapeo grupo → renglón
+
+- **Ingreso bancario conciliado:** `SUM(conciliacions.monto_aplicado)`, fechado por **`movimientos.fecha`** (cuándo entró el cash, base flujo; join por `movimiento_id`, **NO** `fecha_conciliacion`). Línea única "bancario conciliado" — todo el ingreso conciliado es grupo `ingreso` (no se desglosa por categoría: `conciliacions.categoria_id` sigue diferido).
+- **Ingreso manual (efectivo):** `SUM(ingresos_manuales.monto)` por `fecha`. Línea "manual".
+- **Egresos** (manual/recurrente/nómina, todos en la tabla `egresos`): `SUM(egresos.monto)` por `fecha`, agrupados por `categorias.grupo`:
+    - `ingreso` → (no aplica a egresos)
+    - `costo_venta` → **COGS** → `utilidad_bruta = ingresos.total − costo_venta` → margen bruto
+    - `gasto_operativo` → **OPEX** → `ebitda = utilidad_bruta − gasto_operativo` → margen EBITDA
+    - `abajo_ebitda` → depreciación/financieros/impuestos → `utilidad_neta = ebitda − abajo_ebitda − sin_clasificar` → margen neto
+- **`sin_clasificar`** = `egresos_total − costo_venta − gasto_operativo − abajo_ebitda`: absorbe egresos con `categoria_id` NULL o grupo inesperado. Se reporta explícito para recategorizar y garantiza que el P&L cuadra exacto.
+- **Márgenes**: ratio float `round(renglón / ingresos.total, 4)` con guardia de división por cero (periodo sin ingresos → 0). Montos al centavo (`round(.,2)`) en el borde.
+- **Identidad maestra (siempre):** `utilidad_neta = ingresos.total − egresos_total`.
+
+### 13.2 Anti-doble-conteo (clave)
+
+El banco ya guarda los **cargos** (`movimientos.tipo='cargo'`). El P&L **NUNCA** suma `movimientos.tipo='cargo'`, `movimientos.monto` ni `facturas.monto`. Los egresos salen **solo** de la tabla `egresos`; el ingreso bancario es **exclusivamente** `conciliacions.monto_aplicado`. Esto evita doble conteo (y exige disciplina: todo egreso real debe registrarse manual o vía recurrencia). El cruce egreso vs cargo banco queda para Fase 7.
+
+### 13.3 Consolidado vs por empresa
+
+- `empresaId === null` → **consolidado** = suma de todas las empresas **+ el bucket "sin asignar"** (`empresa_id` NULL en conciliaciones, ingresos manuales y egresos). Simétrico entre ingresos y egresos.
+- `empresaId` dado → solo el dinero de esa empresa (`where empresa_id = $empresaId`).
+- Tenancy por `TeamOwned`: solo entra el dinero del team del usuario autenticado.
+
+---
+
 ## Referencias
 
 - `app/Services/Reconciliation/MatcherService.php`
@@ -233,3 +295,7 @@ No hay feature flags en el código. Los cambios de comportamiento se manejan por
 - `app/Http/Controllers/FileUploadController.php`
 - `app/Http/Controllers/ReconciliationController.php`
 - `app/Http/Middleware/SetGlobalDateFilters.php`
+- `app/Console/Commands/GenerarNomina.php`
+- `app/Services/Finance/PayrollCalculator.php`
+- `app/Http/Controllers/IngresoManualController.php`
+- `app/Services/Finance/ProfitLossService.php`

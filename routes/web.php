@@ -42,11 +42,18 @@ Route::middleware('auth')->group(function () {
     Route::post('/reconciliation/batch', [App\Http\Controllers\ReconciliationController::class, 'batch'])->name('reconciliation.batch');
     Route::delete('/reconciliation/{id}', [App\Http\Controllers\ReconciliationController::class, 'destroy'])->name('reconciliation.destroy');
     Route::delete('/reconciliation/group/{groupId}', [App\Http\Controllers\ReconciliationController::class, 'destroyGroup'])->name('reconciliation.group.destroy');
+    Route::patch('/reconciliation/group/{groupId}/empresa', [App\Http\Controllers\ReconciliationController::class, 'updateGroupEmpresa'])->name('reconciliation.group.empresa.update');
     Route::get('/reconciliation/history', [App\Http\Controllers\ReconciliationController::class, 'history'])->name('reconciliation.history');
     Route::get('/reconciliation/status', [App\Http\Controllers\ReconciliationController::class, 'status'])->name('reconciliation.status');
     Route::get('/reconciliation/export', [App\Http\Controllers\ReconciliationController::class, 'export'])->middleware('throttle:10,1')->name('reconciliation.export');
     Route::get('/reconciliation/export/{id}/status', [App\Http\Controllers\ReconciliationController::class, 'checkExportStatus'])->name('reconciliation.export.status');
     Route::get('/reconciliation/export/{id}/download', [App\Http\Controllers\ReconciliationController::class, 'downloadExport'])->name('reconciliation.export.download');
+
+    // Dashboard ejecutivo — Finanzas Fase 6 (Estado de Resultados + export PDF, solo owner)
+    Route::get('/executive', [App\Http\Controllers\ExecutiveController::class, 'index'])->name('executive');
+    Route::get('/executive/export', [App\Http\Controllers\ExecutiveController::class, 'export'])->middleware('throttle:10,1')->name('executive.export');
+    Route::get('/executive/export/{id}/status', [App\Http\Controllers\ExecutiveController::class, 'checkExportStatus'])->name('executive.export.status');
+    Route::get('/executive/export/{id}/download', [App\Http\Controllers\ExecutiveController::class, 'downloadExport'])->name('executive.export.download');
 
     // Movimientos Routes
     Route::get('/movements', [App\Http\Controllers\MovimientoController::class, 'index'])->name('movements.index');
@@ -59,6 +66,18 @@ Route::middleware('auth')->group(function () {
     Route::post('/invoices/batch-destroy', [App\Http\Controllers\FacturaController::class, 'batchDestroy'])->name('invoices.batch-destroy');
     Route::delete('/invoices/{file}', [App\Http\Controllers\FacturaController::class, 'destroy'])->name('invoices.destroy');
 
+    // Egresos — Finanzas Fase 2 (captura manual de gastos)
+    Route::resource('expenses', \App\Http\Controllers\EgresoController::class)->except('show');
+
+    // Egresos recurrentes — Finanzas Fase 3 (plantillas)
+    Route::resource('recurring-expenses', \App\Http\Controllers\EgresoRecurrenteController::class)->except('show');
+
+    // Ingresos manuales (efectivo) — Finanzas Fase 4 (captura manual de ingresos no bancarios)
+    Route::resource('cash-income', \App\Http\Controllers\IngresoManualController::class)->except('show');
+
+    // Empleados — Finanzas Fase 3B (plantilla + fuente de nómina recurrente, solo owner)
+    Route::resource('employees', \App\Http\Controllers\EmpleadoController::class)->except('show');
+
     // Settings Routes
     Route::get('/settings/tolerance', [App\Http\Controllers\ToleranciaController::class, 'edit'])->name('settings.tolerance');
     Route::post('/settings/tolerance', [App\Http\Controllers\ToleranciaController::class, 'update'])->name('settings.tolerance.update');
@@ -67,6 +86,10 @@ Route::middleware('auth')->group(function () {
     Route::resource('bank-formats', \App\Http\Controllers\BankFormatController::class);
     Route::post('/bank-formats/preview', [\App\Http\Controllers\BankFormatController::class, 'preview'])->name('bank-formats.preview');
     Route::get('/api/bank-formats', [\App\Http\Controllers\BankFormatController::class, 'list'])->name('bank-formats.list');
+
+    // Finanzas — Fase 0: dimensión empresa + catálogo de categorías (solo owner del team)
+    Route::resource('settings/companies', \App\Http\Controllers\EmpresaController::class)->names('settings.companies')->except('show');
+    Route::resource('settings/categories', \App\Http\Controllers\CategoriaController::class)->names('settings.categories')->except('show');
 });
 
 require __DIR__.'/auth.php';

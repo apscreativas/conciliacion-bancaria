@@ -16,7 +16,7 @@ Todo lo necesario para operar la aplicación en dev y producción.
 | Queue | Propósito | Jobs | Timeout |
 |---|---|---|---|
 | `imports` | Procesar archivos subidos (XML, Excel, CSV) | `ProcessXmlUpload`, `ProcessBankStatement` | 600s |
-| `exports` | Generar reportes pesados | `GenerateReconciliationExcelExportJob`, `GenerateReconciliationPdfExportJob` | 600s |
+| `exports` | Generar reportes pesados | `GenerateReconciliationExcelExportJob`, `GenerateReconciliationPdfExportJob`, `GenerateProfitLossPdfJob` | 600s |
 | `default` | Tareas generales (ningún job hoy) | — | — |
 
 ### Config de jobs
@@ -25,6 +25,21 @@ Todos los jobs tienen:
 - `tries = 3`
 - `backoff = [30, 120, 300]` (30s, 2min, 5min entre reintentos)
 - `failed()` callback que marca el recurso asociado como `fallido`/`failed`
+
+### `GenerateProfitLossPdfJob` (Finanzas Fase 6)
+
+**Archivo**: `app/Jobs/GenerateProfitLossPdfJob.php`. Clon del PDF job de conciliación (`GenerateReconciliationPdfExportJob`): `ShouldQueue`, `onQueue('exports')`, `$timeout=600`, `$tries=3`, `$backoff=[30,120,300]`, `failed()` → marca el `ExportRequest` como `failed`.
+
+Genera el PDF del Estado de Resultados a partir de un `ExportRequest` con `type='pl_pdf'`, creado por `ExecutiveController@export`. Flujo de `handle()`:
+
+1. Marca el `ExportRequest` como `processing`.
+2. Lee `filters` (incl. **`team_id`**, `granularidad`, `empresa_id`, `month`, `year`).
+3. `PeriodResolver` arma los rangos (actual / anterior / YoY).
+4. `ProfitLossService::forPeriod(..., $teamId)` calcula el P&L actual, anterior, YoY y por empresa. **Pasa `team_id` explícito** porque el job corre en cola **sin auth** → el global scope de `TeamOwned` está apagado; sin esto sumaría todos los teams (ver `docs/security.md` y `docs/sdd/07-executive-dashboard.md`).
+5. `Pdf::loadView('exports.profit_loss.pdf_report', $data)->setPaper('a4','portrait')` (barryvdh/laravel-dompdf), sin clase en `app/Exports/`.
+6. `Storage::put("exports/{teamId}/{userId}/{uuid}.pdf", ...)` y marca el `ExportRequest` como `completed` con `file_path`/`file_name` (`estado_resultados_{year}_{month}.pdf`).
+
+Flujo completo export→status→download (con polling) documentado en `docs/endpoints.md` (Dashboard ejecutivo) y `docs/flows/export.md`.
 
 ### Workers en desarrollo (Sail)
 
@@ -130,6 +145,66 @@ Recalcula hashes SHA-256 de todos los movimientos usando la fórmula actual (`fe
 vendor/bin/sail artisan app:recalculate-movement-hashes --dry-run
 vendor/bin/sail artisan app:recalculate-movement-hashes
 ```
+
+### `egresos:generar-recurrentes` (Finanzas Fase 3)
+
+Genera egresos a partir de las plantillas `egresos_recurrentes` **vencidas** (`activo` y `proxima_generacion <= hoy`), de **todos** los teams (recorre con `withoutGlobalScopes()`, no por efecto colateral de "no hay sesión"). **Idempotente** (no duplica) y con **catch-up** (genera los periodos faltantes hasta hoy, tope 24/plantilla). Marca cada egreso con `origen='recurrente'` y `egreso_recurrente_id`, avanza `proxima_generacion` y aplica vigencia (`num_pagos`/`hasta_fecha` → `activo=false`). Frecuencias mensual/bimestral/trimestral/anual + ajuste a día hábil por fin de semana.
+
+Detalles de robustez (Fase 3, hardening post-review):
+- **Idempotencia respaldada en DB:** índice único `egresos_recurrente_periodo_unique` sobre `egresos(egreso_recurrente_id, fecha)`. El `exists()` del comando es la ruta normal; si una corrida concurrente (manual vs cron) gana la carrera, el `INSERT` duplicado se rechaza y se trata como "ya generado". Un periodo ya existente **cuenta** para `num_pagos` (no se sobre-genera).
+- **Vigencia `hasta_fecha`** se evalúa contra la **fecha de pago ajustada** (no el día nominal): con `habil_siguiente`, un nominal de fin de mes que caería después de `fecha_fin` **no** se genera.
+- **Tope de catch-up (24):** al alcanzarlo, además del `warn` en consola se escribe `Log::warning` (el stdout del scheduler se descarta).
+
+```bash
+php artisan egresos:generar-recurrentes --dry-run   # reporta sin persistir
+php artisan egresos:generar-recurrentes             # genera
+```
+
+### `nomina:generar` (Finanzas Fase 3B)
+
+**Archivo**: `app/Console/Commands/GenerarNomina.php`
+
+Genera los egresos de **nómina quincenal** por cada empleado **activo** de **todos** los teams (recorre con `withoutGlobalScopes()`, no por sesión). Por cada quincena del periodo crea hasta **dos** egresos: la parte **fiscal** (`concepto_nomina='fiscal'`) y, si aplica, el **complemento** (`concepto_nomina='complemento'`). Marca `origen='recurrente'` y `empleado_id`.
+
+- **Fechas de quincena** (vía `PayrollCalculator`): día **15** y **último día del mes**; si la fecha de pago cae en fin de semana se ajusta al **día hábil anterior** (reusa `RecurrenceCalculator::applyDiaHabil`). Sin festivos en v1.
+- **Montos**: salario **mensual** → **mitad por quincena**. Fiscal = `salario_fiscal / 2`; complemento = `(salario_real - salario_fiscal) / 2`.
+- **Mapeo de categoría** (por nombre exacto, activas, `tipo=egreso`): fiscal de empleado `clasificacion='tecnica'` → **"Nómina técnica facturable"** (COGS); `administrativa`/null → **"Nómina fiscal"**; complemento → **"Nómina complemento / real"**. Si falta la categoría del team se **omite** ese egreso (con `Log::warning`), no truena.
+- **Complemento ≤ 0** (salario real == fiscal) → se **omite** (no se crea egreso de complemento).
+- **Elegibilidad** por **fecha nominal** (no la de pago): no genera quincenas con `nominal < fecha_entrada` ni `nominal > fecha_baja`.
+- **Idempotencia**: respaldada en DB por el índice único `egresos_empleado_periodo_unique (empleado_id, fecha, concepto_nomina)`. El comando hace `exists()` (ruta normal) y envuelve el `INSERT` en `try/catch` de `QueryException` (carrera manual vs cron → duplicado rechazado y tratado como "ya generado"). El discriminador `concepto_nomina` desacopla la idempotencia de la categoría, así que cambiar `clasificacion` entre corridas **no** duplica el egreso fiscal.
+- **Ventana móvil de catch-up: 40 días** (default, sin `--month`): recorre las quincenas con fecha nominal entre `hoy-40d` y `hoy`. Nunca pre-genera futuro (`nominal <= hoy`).
+- **`--month=YYYY-MM`**: apunta a ese mes (ignora la ventana móvil) — para backfill de meses fuera de la ventana.
+- **`--dry-run`**: reporta sin persistir.
+- **Resumen** de corrida: egresos creados / omitidos por categoría faltante / complemento ≤ 0.
+- **Limitación**: un outage > 40 días deja huecos; reponerlos con `--month=YYYY-MM` por cada mes faltante.
+- **Back-fill usa valores ACTUALES**: al regenerar una quincena ya vencida, toma el `salario_*`/`clasificacion` vigentes hoy (no hay historial de sueldos). Por eso un aumento aplica al **siguiente** periodo: edita el sueldo después de que la quincena en curso ya se haya generado.
+- **Idempotencia por fecha de pago**: la clave es `(empleado_id, fecha_de_pago, concepto)`. En v1 el ajuste de día hábil es estable (solo fines de semana), así que es seguro. Si en el futuro se añade un calendario de festivos, una quincena ya generada podría mapear a otra fecha de pago y duplicarse → al introducir festivos, migrar la clave de idempotencia a la fecha **nominal** del periodo.
+
+```bash
+php artisan nomina:generar --dry-run            # reporta sin persistir (ventana 40d)
+php artisan nomina:generar                       # genera la ventana móvil
+php artisan nomina:generar --month=2026-06       # backfill de un mes concreto
+```
+
+---
+
+## Scheduler
+
+Definido en `routes/console.php` (Laravel 12 no usa `Console/Kernel`):
+
+```php
+Schedule::command('egresos:generar-recurrentes')->dailyAt('01:00')->withoutOverlapping()->onOneServer();
+Schedule::command('nomina:generar')->dailyAt('01:30')->withoutOverlapping()->onOneServer();
+```
+
+Ambos se corren **diario** y son **idempotentes**, así que correr de más es inocuo: `egresos:generar-recurrentes` decide qué generar vía `proxima_generacion`; `nomina:generar` vía la ventana móvil de 40 días + el índice único. `withoutOverlapping` evita solapes en un host; `onOneServer` evita que en despliegue multi-servidor cada host genere el mismo periodo (requiere un cache store con locks: database/redis). `nomina:generar` corre a las 01:30 (tras los recurrentes) para no solapar.
+
+- **Producción:** una sola entrada de cron dispara TODOS los schedules:
+  ```cron
+  * * * * * cd /var/www/conciliacion && php artisan schedule:run >> /dev/null 2>&1
+  ```
+- **Local (Herd, sin cron):** `php artisan schedule:work` en una terminal (corre el scheduler en foreground), **o** ejecutar el comando a mano cuando se necesite.
+- Ver lo programado: `php artisan schedule:list`.
 
 ---
 

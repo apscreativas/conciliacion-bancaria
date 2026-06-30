@@ -96,6 +96,7 @@ Evidencia: `routes/web.php`, `routes/auth.php`.
 | POST | `/reconciliation/batch` | `ReconciliationController@batch` | `reconciliation.batch` | — |
 | DELETE | `/reconciliation/{id}` | `ReconciliationController@destroy` | `reconciliation.destroy` | — |
 | DELETE | `/reconciliation/group/{groupId}` | `ReconciliationController@destroyGroup` | `reconciliation.group.destroy` | — |
+| PATCH | `/reconciliation/group/{groupId}/empresa` | `ReconciliationController@updateGroupEmpresa` | `reconciliation.group.empresa.update` | Asigna/des-asigna `empresa_id` a todas las filas del grupo (Finanzas Fase 1). Scope `team_id` (404 si ajeno); `empresa_id` nullable + `exists` scoped (422 si de otro team) |
 | GET | `/reconciliation/history` | `ReconciliationController@history` | `reconciliation.history` | — |
 | GET | `/reconciliation/status` | `ReconciliationController@status` | `reconciliation.status` | — |
 | GET | `/reconciliation/export` | `ReconciliationController@export` | `reconciliation.export` | **`throttle:10,1`** |
@@ -108,7 +109,7 @@ Evidencia: `routes/web.php`, `routes/auth.php`.
 |---|---|
 | `/reconciliation` | `Reconciliation/Workbench` (props: `invoices`, `movements`, `tolerance`, `filters`) |
 | `/reconciliation/auto` | `Reconciliation/Matches` (props: `matches`, `tolerance`) |
-| `/reconciliation/history` | `Reconciliation/History` (props: `reconciledGroups` paginator con transform custom, `filters`) |
+| `/reconciliation/history` | `Reconciliation/History` (props: `reconciledGroups` paginator con transform custom —cada grupo incluye `empresa`—, `empresas` lista activa del team, `filters`) |
 | `/reconciliation/status` | `Reconciliation/Status` (props: `conciliatedInvoices`, `conciliatedMovements`, `pendingInvoices`, `pendingMovements` + totales + `filters`) |
 
 ### Flujo de export
@@ -158,6 +159,120 @@ Ver `flows/export.md` para detalle.
 
 ---
 
+## Egresos (Finanzas Fase 2)
+
+Resource `->except('show')`. Modelo/tabla en español (`Egreso`/`egresos`); **rutas y Vue pages en inglés** (`expenses`/`Expenses`). **Acceso: cualquier miembro del team** (captura operativa; sin owner-gate). Tenancy por `TeamOwned` (registro de otro team → 404 vía route-model binding). Validación en `EgresoRequest`: `categoria_id` requerida + `exists` scoped (team **y `tipo=egreso`**), `monto` > 0, `empresa_id` opcional + `exists` scoped.
+
+| Método | URI | Controller@action | Nombre | Tipo respuesta |
+|---|---|---|---|---|
+| GET | `/expenses` | `EgresoController@index` | `expenses.index` | Inertia `Expenses/Index` (props: `egresos` paginator, `empresas`, `categorias`, `total`, `totalsByCategoria`, `filters`) |
+| GET | `/expenses/create` | `EgresoController@create` | `expenses.create` | Inertia `Expenses/Create` |
+| POST | `/expenses` | `EgresoController@store` | `expenses.store` | Redirect (set `user_id`, `origen='manual'`) |
+| GET | `/expenses/{expense}/edit` | `EgresoController@edit` | `expenses.edit` | Inertia `Expenses/Create` con `egreso` |
+| PUT/PATCH | `/expenses/{expense}` | `EgresoController@update` | `expenses.update` | Redirect |
+| DELETE | `/expenses/{expense}` | `EgresoController@destroy` | `expenses.destroy` | Redirect |
+
+### Filtros soportados en `/expenses`
+- `empresa_id`, `categoria_id` (single-select)
+- `date_from`, `date_to` (sobre `egresos.fecha`); fallback `month`/`year` (`SetGlobalDateFilters`)
+- `amount_min`, `amount_max`; `per_page`
+- Totales (`total` + `totalsByCategoria`) calculados sobre el conjunto filtrado.
+
+---
+
+## Egresos recurrentes (Finanzas Fase 3)
+
+Resource `recurring-expenses` `->except('show')`. CRUD de **plantillas** que el comando `egresos:generar-recurrentes` materializa en egresos. **Acceso: cualquier miembro del team** (tenancy `TeamOwned` + `ensureOwnTeam`). `store` computa `proxima_generacion` (primera ocurrencia); `update` la recomputa solo si `pagos_generados==0`. Validación en `EgresoRecurrenteRequest` (`categoria_id` requerida tipo=egreso, `monto`>0, `frecuencia` ∈ mensual/bimestral/trimestral/anual — **no quincenal**, reglas condicionales de vigencia).
+
+| Método | URI | Controller@action | Nombre | Tipo respuesta |
+|---|---|---|---|---|
+| GET | `/recurring-expenses` | `EgresoRecurrenteController@index` | `recurring-expenses.index` | Inertia `RecurringExpenses/Index` (`plantillas`, `empresas`, `categorias`) |
+| GET | `/recurring-expenses/create` | `@create` | `recurring-expenses.create` | Inertia `RecurringExpenses/Create` |
+| POST | `/recurring-expenses` | `@store` | `recurring-expenses.store` | Redirect |
+| GET | `/recurring-expenses/{recurring_expense}/edit` | `@edit` | `recurring-expenses.edit` | Inertia `RecurringExpenses/Create` con `plantilla` |
+| PUT/PATCH | `/recurring-expenses/{recurring_expense}` | `@update` | `recurring-expenses.update` | Redirect |
+| DELETE | `/recurring-expenses/{recurring_expense}` | `@destroy` | `recurring-expenses.destroy` | Redirect (los egresos generados se conservan) |
+
+Comando + schedule documentados en `docs/operations.md` (sección Scheduler).
+
+---
+
+## Empleados (Finanzas Fase 3B)
+
+Resource `employees` `->except('show')`. Plantilla de personal que el comando `nomina:generar` materializa en egresos de nómina. Modelo/columnas en español (`Empleado`); **rutas y Vue pages en inglés** (`employees`/`Employees`). **Acceso: solo owner del team en TODAS las habilidades** (incluido `viewAny`/`view`) vía `EmpleadoPolicy` — los salarios (fiscal/real) son sensibles. Un no-owner recibe **403**. Tenancy por `TeamOwned` (registro de otro team → 404 vía route-model binding). Validación en `EmpleadoRequest`: `empresa_id` requerida + `exists` scoped al team, `salario_fiscal`/`salario_real` > 0 con `salario_real >= salario_fiscal`, `fecha_baja >= fecha_entrada`, `clasificacion` ∈ tecnica/administrativa (nullable).
+
+| Método | URI | Controller@action | Nombre | Tipo respuesta |
+|---|---|---|---|---|
+| GET | `/employees` | `EmpleadoController@index` | `employees.index` | Inertia `Employees/Index` (props: `empleados` paginator, `empresas`) |
+| GET | `/employees/create` | `EmpleadoController@create` | `employees.create` | Inertia `Employees/Create` |
+| POST | `/employees` | `EmpleadoController@store` | `employees.store` | Redirect (set `user_id`, `team_id`) |
+| GET | `/employees/{employee}/edit` | `EmpleadoController@edit` | `employees.edit` | Inertia `Employees/Create` con `empleado` |
+| PUT/PATCH | `/employees/{employee}` | `EmpleadoController@update` | `employees.update` | Redirect |
+| DELETE | `/employees/{employee}` | `EmpleadoController@destroy` | `employees.destroy` | Redirect (la nómina ya generada se conserva) |
+
+Comando `nomina:generar` + schedule documentados en `docs/operations.md`.
+
+---
+
+## Ingresos manuales (Finanzas Fase 4)
+
+Resource `cash-income` `->except('show')`. Captura del ingreso real en **efectivo** (no bancario); espejo de Egresos (Fase 2) con categorías `tipo=ingreso`. Modelo/columnas en español (`IngresoManual`/`ingresos_manuales`); **rutas y Vue pages en inglés** (`cash-income`/`CashIncome`). **Acceso: cualquier miembro del team** (captura operativa; sin owner-gate). Tenancy por `TeamOwned` (registro de otro team → 404 vía route-model binding) + `ensureOwnTeam` (defense-in-depth) en edit/update/destroy. Validación en `IngresoManualRequest`: `categoria_id` requerida + `exists` scoped (team **y `tipo=ingreso`**), `monto` > 0 (`gt:0`), `empresa_id` opcional + `exists` scoped, `cliente` opcional, `metodo` ∈ efectivo/otro (default `efectivo`). `empresa_id`/`metodo` vacíos se normalizan en `prepareForValidation`.
+
+| Método | URI | Controller@action | Nombre | Tipo respuesta |
+|---|---|---|---|---|
+| GET | `/cash-income` | `IngresoManualController@index` | `cash-income.index` | Inertia `CashIncome/Index` (props: `ingresos` paginator, `empresas`, `categorias`, `total`, `totalsByCategoria`, `filters`) |
+| GET | `/cash-income/create` | `IngresoManualController@create` | `cash-income.create` | Inertia `CashIncome/Create` |
+| POST | `/cash-income` | `IngresoManualController@store` | `cash-income.store` | Redirect (set `user_id`, `team_id`) |
+| GET | `/cash-income/{cash_income}/edit` | `IngresoManualController@edit` | `cash-income.edit` | Inertia `CashIncome/Create` con `ingreso` |
+| PUT/PATCH | `/cash-income/{cash_income}` | `IngresoManualController@update` | `cash-income.update` | Redirect |
+| DELETE | `/cash-income/{cash_income}` | `IngresoManualController@destroy` | `cash-income.destroy` | Redirect |
+
+### Filtros soportados en `/cash-income`
+- `empresa_id`, `categoria_id` (single-select)
+- `date_from`, `date_to` (sobre `ingresos_manuales.fecha`); fallback `month`/`year` (`SetGlobalDateFilters`)
+- `amount_min`, `amount_max`; `per_page` (whitelist 10/25/50/100/all; basura → 25)
+- Totales (`total` + `totalsByCategoria`, con bucket "Sin categoría") calculados sobre el conjunto filtrado.
+
+---
+
+## Dashboard ejecutivo (Finanzas Fase 6)
+
+Estado de Resultados nivel CEO/consejo. Consume `ProfitLossService` (con `team_id` explícito) + `PeriodResolver`. **Acceso: solo owner del team** (`ChecksTeamOwnership::ownsCurrentTeam`) en **todos** los métodos — un no-owner recibe **403**. Rutas y Vue page en inglés (`executive`/`Executive/`), dominio en español. El export PDF asíncrono reusa el patrón de `ReconciliationController` (cola `exports`, `ExportRequest`, polling).
+
+| Método | URI | Controller@action | Nombre | Middleware extra |
+|---|---|---|---|---|
+| GET | `/executive` | `ExecutiveController@index` | `executive` | — (solo owner, 403) |
+| GET | `/executive/export` | `ExecutiveController@export` | `executive.export` | **`throttle:10,1`** (solo owner, 403) |
+| GET | `/executive/export/{id}/status` | `ExecutiveController@checkExportStatus` | `executive.export.status` | — (solo owner; scope team + ownership por `user_id`) |
+| GET | `/executive/export/{id}/download` | `ExecutiveController@downloadExport` | `executive.export.download` | — (solo owner; scope team + ownership por `user_id`) |
+
+### Page Inertia renderizada
+
+| Endpoint | Page (props) |
+|---|---|
+| `/executive` | `Executive/Index` (props: `pnl`, `pnlPrev`, `pnlYoY`, `porEmpresa`, `tuChecador`, `empresas`, `filters`) |
+
+- `pnl`/`pnlPrev`/`pnlYoY`: `ProfitLossService::forPeriod` del periodo actual, el anterior (misma granularidad) y el mismo periodo del año anterior (YoY) — todos con `empresa_id` + `team_id` explícito.
+- `porEmpresa`: un P&L por cada empresa activa del team (margen por unidad de negocio).
+- `tuChecador`: P&L de la empresa con `slug='tu-checador'` si existe (tarjeta de ingreso recurrente); `null` si no existe (degrada con gracia).
+- `filters`: `granularidad` (`mensual`|`trimestral`|`semestral`|`anual`, default `mensual`), `empresa_id` (null=consolidado), `month`, `year` (ancla de `SetGlobalDateFilters`).
+
+### Filtros / parámetros (query)
+
+- `granularidad` — granularidad del periodo (`PeriodResolver`); valor no reconocido → `mensual`.
+- `empresa_id` — int positivo o vacío (consolidado, incluye "sin asignar").
+- `month`/`year` — ancla; ya inyectados por `SetGlobalDateFilters`, default `now()`.
+
+### Flujo de export PDF
+
+1. `GET /executive/export?granularidad&empresa_id&month&year` → valida, crea `ExportRequest` (`type='pl_pdf'`, status `queued`, `filters` incluyen `team_id`), dispatcha `GenerateProfitLossPdfJob` (cola `exports`), responde JSON `{id, status:'queued', message}` si `wantsJson()`.
+2. Polling `GET /executive/export/{id}/status` → `{status, error_message, is_offline}` (`is_offline=true` si `queued > 2min`).
+3. Al completar: `GET /executive/export/{id}/download` → `Storage::download(...)`.
+
+Ver `docs/operations.md` (Colas) para el job y `docs/flows/export.md` para el patrón base.
+
+---
+
 ## Settings — Tolerance
 
 | Método | URI | Controller@action | Nombre | Autorización |
@@ -183,6 +298,31 @@ Ver `flows/export.md` para detalle.
 
 ---
 
+## Settings — Empresas y Categorías (Finanzas Fase 0)
+
+Resource routes (`->except('show')`). Modelos/columnas en español (`Empresa`, `Categoria`), pero **rutas y Vue pages en inglés** (convención CLAUDE.md §5.2): `companies` / `categories`.
+
+**Autorización vía Policy** (`EmpresaPolicy`, `CategoriaPolicy`, auto-descubiertas): `viewAny` → cualquier miembro del team; `create/update/delete` → solo **owner del team** (`User::ownsTeam`). Los controllers llaman `$this->authorize(...)`; los `EmpresaRequest`/`CategoriaRequest` (FormRequests) hacen la validación. El sidebar y el `index` ocultan acciones a no-owners.
+
+| Método | URI | Controller@action | Nombre | Tipo respuesta |
+|---|---|---|---|---|
+| GET | `/settings/companies` | `EmpresaController@index` | `settings.companies.index` | Inertia `Settings/Companies/Index` |
+| GET | `/settings/companies/create` | `EmpresaController@create` | `settings.companies.create` | Inertia `Settings/Companies/Create` |
+| POST | `/settings/companies` | `EmpresaController@store` | `settings.companies.store` | Redirect |
+| GET | `/settings/companies/{company}/edit` | `EmpresaController@edit` | `settings.companies.edit` | Inertia `Settings/Companies/Create` con `empresa` |
+| PUT/PATCH | `/settings/companies/{company}` | `EmpresaController@update` | `settings.companies.update` | Redirect |
+| DELETE | `/settings/companies/{company}` | `EmpresaController@destroy` | `settings.companies.destroy` | Redirect |
+| GET | `/settings/categories` | `CategoriaController@index` | `settings.categories.index` | Inertia `Settings/Categories/Index` |
+| GET | `/settings/categories/create` | `CategoriaController@create` | `settings.categories.create` | Inertia `Settings/Categories/Create` |
+| POST | `/settings/categories` | `CategoriaController@store` | `settings.categories.store` | Redirect |
+| GET | `/settings/categories/{category}/edit` | `CategoriaController@edit` | `settings.categories.edit` | Inertia `Settings/Categories/Create` con `categoria` |
+| PUT/PATCH | `/settings/categories/{category}` | `CategoriaController@update` | `settings.categories.update` | Redirect |
+| DELETE | `/settings/categories/{category}` | `CategoriaController@destroy` | `settings.categories.destroy` | Redirect |
+
+Acceso a un registro de otro team → **404** (global scope `TeamOwned` en el route-model binding). Mutación por un miembro no-owner → **403** (Policy). Validación: `nombre` único por team, **slug único por team** (evita 500 por colisión de slug derivado), y en categorías invariante `tipo`/`grupo`/`naturaleza` (ingreso ⇒ grupo `ingreso` sin naturaleza; egreso ⇒ grupo de egreso con naturaleza).
+
+---
+
 ## Health check
 
 | Método | URI | Nombre |
@@ -195,5 +335,5 @@ Ver `flows/export.md` para detalle.
 
 - El grupo `auth` se cierra justo antes de `require __DIR__.'/auth.php'`. Todas las rutas de dominio requieren sesión.
 - `verified` solo aplica a `/dashboard`.
-- Rate limiting custom: solo `throttle:10,1` en `GET /reconciliation/export`. El resto de rutas usa el rate limiter global de Laravel (60/min por defecto).
+- Rate limiting custom: `throttle:10,1` en `GET /reconciliation/export` y `GET /executive/export`. El resto de rutas usa el rate limiter global de Laravel (60/min por defecto).
 - `route()` en Vue disponible vía Ziggy (`ZiggyVue` en `resources/js/app.ts`).

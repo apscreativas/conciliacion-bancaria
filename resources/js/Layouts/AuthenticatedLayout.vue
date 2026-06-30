@@ -165,6 +165,30 @@ onMounted(() => {
                     {{ $t('Inicio') }}
                 </SidebarLink>
 
+                <!-- Dashboard ejecutivo (solo owner del team) -->
+                <SidebarLink
+                    v-if="$page.props.auth.user.current_team && $page.props.auth.user.current_team.user_id === $page.props.auth.user.id"
+                    :href="route('executive')"
+                    :active="route().current('executive')"
+                >
+                    <template #icon>
+                        <svg
+                            class="w-5 h-5"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                        >
+                            <path
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                stroke-width="2"
+                                d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
+                            ></path>
+                        </svg>
+                    </template>
+                    {{ $t('Dashboard ejecutivo') }}
+                </SidebarLink>
+
                 <!-- Placeholder for future links -->
                 <SidebarLink
                     :href="route('reconciliation.index')"
@@ -276,6 +300,50 @@ onMounted(() => {
                     {{ $t('Facturas') }}
                 </SidebarLink>
 
+                <SidebarLink
+                    :href="route('expenses.index')"
+                    :active="route().current('expenses.*')"
+                >
+                    <template #icon>
+                        <svg
+                            class="w-5 h-5"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                        >
+                            <path
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                stroke-width="2"
+                                d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"
+                            ></path>
+                        </svg>
+                    </template>
+                    {{ $t('Egresos') }}
+                </SidebarLink>
+
+                <SidebarLink
+                    :href="route('cash-income.index')"
+                    :active="route().current('cash-income.*')"
+                >
+                    <template #icon>
+                        <svg
+                            class="w-5 h-5"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                        >
+                            <path
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                stroke-width="2"
+                                d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                            ></path>
+                        </svg>
+                    </template>
+                    {{ $t('Ingresos') }}
+                </SidebarLink>
+
                 <!-- Settings -->
                 <div
                     class="pt-4 border-t border-gray-800 mt-4"
@@ -323,6 +391,30 @@ onMounted(() => {
                             </svg>
                         </template>
                         {{ $t('Tolerancia') }}
+                    </SidebarLink>
+                    <SidebarLink
+                        v-if="$page.props.auth.user.current_team && $page.props.auth.user.current_team.user_id === $page.props.auth.user.id"
+                        :href="route('settings.companies.index')"
+                        :active="route().current('settings.companies.*')"
+                    >
+                        <template #icon>
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0H5m14 0h2M5 21H3m4-4h.01M9 9h.01M9 13h.01M13 13h.01M13 9h.01" />
+                            </svg>
+                        </template>
+                        {{ $t('Empresas') }}
+                    </SidebarLink>
+                    <SidebarLink
+                        v-if="$page.props.auth.user.current_team && $page.props.auth.user.current_team.user_id === $page.props.auth.user.id"
+                        :href="route('settings.categories.index')"
+                        :active="route().current('settings.categories.*')"
+                    >
+                        <template #icon>
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5a1.99 1.99 0 011.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.99 1.99 0 013 12V7a4 4 0 014-4z" />
+                            </svg>
+                        </template>
+                        {{ $t('Categorías') }}
                     </SidebarLink>
                 </div>
             </nav>

@@ -1,20 +1,54 @@
 <script setup lang="ts">
+import { router } from "@inertiajs/vue3";
 import { computed } from "vue";
+
+interface Empresa {
+    id: number;
+    nombre: string;
+    color: string | null;
+}
 
 const props = defineProps<{
     group: {
         id: string; // Group UUID
         created_at: string;
         user: { name: string };
+        empresa?: Empresa | null;
         invoices: Array<any>;
         movements: Array<any>;
         total_invoices: number;
         total_movements: number;
         total_applied: number;
     };
+    empresas: Empresa[];
 }>();
 
 const emit = defineEmits(["unreconcile"]);
+
+// Estilo de chip de color con opacidad (fondo 15, borde 30). Reusado por todos los badges.
+const badgeStyle = (color: string | null) => {
+    const c = color || "#9ca3af";
+    return { backgroundColor: c + "15", color: c, borderColor: c + "30" };
+};
+
+// La empresa activa actual del grupo puede estar inactiva (y por tanto fuera de `empresas`);
+// la incluimos en las opciones para que el <select> siempre refleje el valor real.
+const empresaOptions = computed<Empresa[]>(() => {
+    const current = props.group.empresa;
+    if (current && !props.empresas.some((e) => e.id === current.id)) {
+        return [current, ...props.empresas];
+    }
+    return props.empresas;
+});
+
+const assignEmpresa = (event: Event) => {
+    const value = (event.target as HTMLSelectElement).value;
+    router.patch(
+        route("reconciliation.group.empresa.update", props.group.id),
+        { empresa_id: value === "" ? null : Number(value) },
+        { preserveScroll: true },
+    );
+};
 
 const formatDate = (dateString: string) => {
     if (!dateString) return "";
@@ -56,6 +90,27 @@ const getDifference = (group: any) => {
                 </h3>
                 <div class="text-sm text-gray-400 mt-1">
                     {{ formatDate(group.created_at) }} • {{ group.user.name }}
+                </div>
+                <!-- Empresa: badge + selector (Finanzas Fase 1) -->
+                <div class="flex items-center gap-2 mt-2">
+                    <span
+                        v-if="group.empresa"
+                        class="text-[10px] font-bold px-2 py-0.5 rounded border inline-block w-fit"
+                        :style="badgeStyle(group.empresa.color)"
+                    >
+                        {{ group.empresa.nombre }}
+                    </span>
+                    <select
+                        :value="group.empresa?.id ?? ''"
+                        @change="assignEmpresa"
+                        :title="$t('Asignar empresa')"
+                        class="text-xs border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-1"
+                    >
+                        <option value="">{{ $t("Sin asignar") }}</option>
+                        <option v-for="e in empresaOptions" :key="e.id" :value="e.id">
+                            {{ e.nombre }}
+                        </option>
+                    </select>
                 </div>
             </div>
 
@@ -170,15 +225,7 @@ const getDifference = (group: any) => {
                             <div
                                 v-if="movement.archivo?.bank_format"
                                 class="text-[10px] font-bold px-1.5 py-0.5 rounded border inline-block w-fit mb-1"
-                                :style="{
-                                    backgroundColor:
-                                        movement.archivo.bank_format.color +
-                                        '15',
-                                    color: movement.archivo.bank_format.color,
-                                    borderColor:
-                                        movement.archivo.bank_format.color +
-                                        '30',
-                                }"
+                                :style="badgeStyle(movement.archivo.bank_format.color)"
                             >
                                 {{ movement.archivo.bank_format.name }}
                             </div>
