@@ -55,6 +55,7 @@ Ver también `architecture.md §Tenancy` y `business-rules.md §1`.
 | Endpoint | Limit |
 |---|---|
 | `GET /reconciliation/export` | `throttle:10,1` (10/min) |
+| `GET /executive/export` | `throttle:10,1` (10/min) |
 | Auth email verify/send | `throttle:6,1` (6/min) |
 | Resto de rutas auth | Global 60/min (Laravel default) |
 
@@ -153,6 +154,7 @@ No hay Policies extensivas — la protección vive en controllers. El único Pol
 - `ReconciliationController::downloadExport/checkExportStatus` — `user_id === auth::id()` (no basta con estar en el team).
 - `EmpresaPolicy`/`CategoriaPolicy` (Finanzas Fase 0, auto-descubiertas) — `viewAny` cualquier miembro; `create/update/delete` solo owner del team.
 - `EmpleadoPolicy` (Finanzas Fase 3B, auto-descubierta) — **solo owner del team en TODAS las habilidades**, incluidas `viewAny`/`view`. Justificación: el módulo Empleados expone **salarios** (fiscal y real), información sensible que no debe ver cualquier miembro del team. Un no-owner recibe **403** tanto en lectura como en mutación. (En contraste, la captura operativa de egresos manuales y recurrentes sigue siendo accesible a cualquier miembro del team.) Tests: `tests/Feature/EmpleadoTest.php`.
+- `ExecutiveController` (Finanzas Fase 6, dashboard ejecutivo `/executive` + trío de export) — **solo owner del team** vía `App\Policies\Concerns\ChecksTeamOwnership::ownsCurrentTeam`. Cada método (`index`, `export`, `checkExportStatus`, `downloadExport`) abre con `abort_unless($this->ownsCurrentTeam($request->user()), 403)`. Justificación: es la vista de liderazgo (P&L consolidado y por empresa, márgenes, costo de nómina) — información financiera del grupo que no debe ver cualquier miembro. Un no-owner recibe **403** en pantalla y en export. El `SidebarLink` de "Dashboard ejecutivo" en `AuthenticatedLayout` está condicionado a owner (`current_team.user_id === auth.user.id`), así que un no-owner ni lo ve. Además, `checkExportStatus`/`downloadExport` exigen `user_id === auth::id()` (no basta con ser owner del team). Tests: `tests/Feature/ExecutiveControllerTest.php`.
 
 ### Módulos solo-owner vs. cualquier miembro
 
@@ -161,6 +163,7 @@ No hay Policies extensivas — la protección vive en controllers. El único Pol
 | Empresas, Categorías | Cualquier miembro | Solo owner |
 | Egresos, Egresos recurrentes | Cualquier miembro | Cualquier miembro |
 | **Empleados** (salarios sensibles) | **Solo owner** | **Solo owner** |
+| **Dashboard ejecutivo** (`/executive` + export P&L) | **Solo owner** | **Solo owner** (export) |
 | Tolerancia | Solo owner | Solo owner |
 
 ---

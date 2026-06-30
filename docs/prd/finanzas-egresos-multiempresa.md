@@ -231,6 +231,8 @@ GASTOS DE OPERACIÓN (OPEX)
 
 ## 5. Roadmap por fases
 
+> ✅ **v1 COMPLETO (2026-06-30).** Las Fases 0–6 están cerradas e integradas. La plataforma cubre el ciclo completo del v1: dimensión empresa + catálogo (Fase 0), asignación de empresa a conciliaciones (Fase 1), egresos manuales (Fase 2), egresos recurrentes (Fase 3), empleados + nómina (Fase 3B), ingresos manuales (Fase 4), motor del Estado de Resultados (Fase 5) y dashboard ejecutivo + export PDF (Fase 6). La **Fase 7** (conciliación de egresos) y las fases candidatas quedan como evolución post-v1.
+
 Cada fase es entregable, probable y no rompe lo anterior. Orden = dependencias.
 
 ### Fase 0 — Fundamentos: dimensión empresa + catálogo de categorías  ✅ CERRADA (2026-06-26)
@@ -289,7 +291,8 @@ Cada fase es entregable, probable y no rompe lo anterior. Orden = dependencias.
 - **Criterios:** dados datos sembrados, los totales y márgenes cuadran al centavo; consolidado = suma de empresas + sin-asignar; performance OK con índices por fecha/empresa.
 - **Riesgo:** medio (lógica financiera). **Test-first** con casos numéricos fijos.
 
-### Fase 6 — Dashboard ejecutivo + export consejo
+### Fase 6 — Dashboard ejecutivo + export consejo  ✅ CERRADA (2026-06-30)
+> Implementada en `feature/finanzas-fase6`. SDD: `docs/sdd/07-executive-dashboard.md`. Página `/executive` (Inertia `Executive/Index`) **solo owner del team**: KPIs (Ingresos, Utilidad bruta, EBITDA, Utilidad neta + márgenes y deltas), P&L en cascada (waterfall), comparativos periodo anterior + YoY, margen por unidad de negocio y tarjeta "Tu Checador" (ingreso recurrente). Nuevo `App\Services\Finance\PeriodResolver` (rangos mensual/trimestral/semestral/anual + `previous` + `yearOverYear`); `ProfitLossService::forPeriod` extendido con `?int $teamId` (queue-safety, defense-in-depth) **sin migración**. Export **PDF asíncrono** vía `GenerateProfitLossPdfJob` (cola `exports`, `ExportRequest type='pl_pdf'`, flujo export→status→download con polling), clon del PDF de conciliación. Gráficas con **CSS/divs** (sin librería nueva). Tests: `PeriodResolverTest` (unit), `ExecutiveControllerTest` (8) y extensión de `ProfitLossServiceTest` (queue-safety) verdes, 0 regresiones; motor de conciliación intacto. **Última fase del v1.**
 - **Objetivo:** la vista nivel CEO/consejo.
 - **Alcance:** página `/executive` o `/pnl`: selector de periodo (mensual/trimestral/semestral/anual) + selector empresa/consolidado; tarjetas KPI (Ingresos, Utilidad bruta y margen, EBITDA y margen, Utilidad neta); P&L en cascada/waterfall; comparativo periodo vs periodo anterior y YoY; ingreso recurrente (Tu Checador) destacado; margen por unidad de negocio. Export **PDF** (extender patrón de export async existente) presentable a consejo.
 - **Criterios:** cambiar periodo/empresa recalcula vía `ProfitLossService`; números cuadran con Fase 5; PDF generado vía cola `exports`; responsive.

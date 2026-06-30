@@ -235,6 +235,44 @@ Resource `cash-income` `->except('show')`. Captura del ingreso real en **efectiv
 
 ---
 
+## Dashboard ejecutivo (Finanzas Fase 6)
+
+Estado de Resultados nivel CEO/consejo. Consume `ProfitLossService` (con `team_id` explícito) + `PeriodResolver`. **Acceso: solo owner del team** (`ChecksTeamOwnership::ownsCurrentTeam`) en **todos** los métodos — un no-owner recibe **403**. Rutas y Vue page en inglés (`executive`/`Executive/`), dominio en español. El export PDF asíncrono reusa el patrón de `ReconciliationController` (cola `exports`, `ExportRequest`, polling).
+
+| Método | URI | Controller@action | Nombre | Middleware extra |
+|---|---|---|---|---|
+| GET | `/executive` | `ExecutiveController@index` | `executive` | — (solo owner, 403) |
+| GET | `/executive/export` | `ExecutiveController@export` | `executive.export` | **`throttle:10,1`** (solo owner, 403) |
+| GET | `/executive/export/{id}/status` | `ExecutiveController@checkExportStatus` | `executive.export.status` | — (solo owner; scope team + ownership por `user_id`) |
+| GET | `/executive/export/{id}/download` | `ExecutiveController@downloadExport` | `executive.export.download` | — (solo owner; scope team + ownership por `user_id`) |
+
+### Page Inertia renderizada
+
+| Endpoint | Page (props) |
+|---|---|
+| `/executive` | `Executive/Index` (props: `pnl`, `pnlPrev`, `pnlYoY`, `porEmpresa`, `tuChecador`, `empresas`, `filters`) |
+
+- `pnl`/`pnlPrev`/`pnlYoY`: `ProfitLossService::forPeriod` del periodo actual, el anterior (misma granularidad) y el mismo periodo del año anterior (YoY) — todos con `empresa_id` + `team_id` explícito.
+- `porEmpresa`: un P&L por cada empresa activa del team (margen por unidad de negocio).
+- `tuChecador`: P&L de la empresa con `slug='tu-checador'` si existe (tarjeta de ingreso recurrente); `null` si no existe (degrada con gracia).
+- `filters`: `granularidad` (`mensual`|`trimestral`|`semestral`|`anual`, default `mensual`), `empresa_id` (null=consolidado), `month`, `year` (ancla de `SetGlobalDateFilters`).
+
+### Filtros / parámetros (query)
+
+- `granularidad` — granularidad del periodo (`PeriodResolver`); valor no reconocido → `mensual`.
+- `empresa_id` — int positivo o vacío (consolidado, incluye "sin asignar").
+- `month`/`year` — ancla; ya inyectados por `SetGlobalDateFilters`, default `now()`.
+
+### Flujo de export PDF
+
+1. `GET /executive/export?granularidad&empresa_id&month&year` → valida, crea `ExportRequest` (`type='pl_pdf'`, status `queued`, `filters` incluyen `team_id`), dispatcha `GenerateProfitLossPdfJob` (cola `exports`), responde JSON `{id, status:'queued', message}` si `wantsJson()`.
+2. Polling `GET /executive/export/{id}/status` → `{status, error_message, is_offline}` (`is_offline=true` si `queued > 2min`).
+3. Al completar: `GET /executive/export/{id}/download` → `Storage::download(...)`.
+
+Ver `docs/operations.md` (Colas) para el job y `docs/flows/export.md` para el patrón base.
+
+---
+
 ## Settings — Tolerance
 
 | Método | URI | Controller@action | Nombre | Autorización |
@@ -297,5 +335,5 @@ Acceso a un registro de otro team → **404** (global scope `TeamOwned` en el ro
 
 - El grupo `auth` se cierra justo antes de `require __DIR__.'/auth.php'`. Todas las rutas de dominio requieren sesión.
 - `verified` solo aplica a `/dashboard`.
-- Rate limiting custom: solo `throttle:10,1` en `GET /reconciliation/export`. El resto de rutas usa el rate limiter global de Laravel (60/min por defecto).
+- Rate limiting custom: `throttle:10,1` en `GET /reconciliation/export` y `GET /executive/export`. El resto de rutas usa el rate limiter global de Laravel (60/min por defecto).
 - `route()` en Vue disponible vía Ziggy (`ZiggyVue` en `resources/js/app.ts`).

@@ -16,7 +16,7 @@ Todo lo necesario para operar la aplicación en dev y producción.
 | Queue | Propósito | Jobs | Timeout |
 |---|---|---|---|
 | `imports` | Procesar archivos subidos (XML, Excel, CSV) | `ProcessXmlUpload`, `ProcessBankStatement` | 600s |
-| `exports` | Generar reportes pesados | `GenerateReconciliationExcelExportJob`, `GenerateReconciliationPdfExportJob` | 600s |
+| `exports` | Generar reportes pesados | `GenerateReconciliationExcelExportJob`, `GenerateReconciliationPdfExportJob`, `GenerateProfitLossPdfJob` | 600s |
 | `default` | Tareas generales (ningún job hoy) | — | — |
 
 ### Config de jobs
@@ -25,6 +25,21 @@ Todos los jobs tienen:
 - `tries = 3`
 - `backoff = [30, 120, 300]` (30s, 2min, 5min entre reintentos)
 - `failed()` callback que marca el recurso asociado como `fallido`/`failed`
+
+### `GenerateProfitLossPdfJob` (Finanzas Fase 6)
+
+**Archivo**: `app/Jobs/GenerateProfitLossPdfJob.php`. Clon del PDF job de conciliación (`GenerateReconciliationPdfExportJob`): `ShouldQueue`, `onQueue('exports')`, `$timeout=600`, `$tries=3`, `$backoff=[30,120,300]`, `failed()` → marca el `ExportRequest` como `failed`.
+
+Genera el PDF del Estado de Resultados a partir de un `ExportRequest` con `type='pl_pdf'`, creado por `ExecutiveController@export`. Flujo de `handle()`:
+
+1. Marca el `ExportRequest` como `processing`.
+2. Lee `filters` (incl. **`team_id`**, `granularidad`, `empresa_id`, `month`, `year`).
+3. `PeriodResolver` arma los rangos (actual / anterior / YoY).
+4. `ProfitLossService::forPeriod(..., $teamId)` calcula el P&L actual, anterior, YoY y por empresa. **Pasa `team_id` explícito** porque el job corre en cola **sin auth** → el global scope de `TeamOwned` está apagado; sin esto sumaría todos los teams (ver `docs/security.md` y `docs/sdd/07-executive-dashboard.md`).
+5. `Pdf::loadView('exports.profit_loss.pdf_report', $data)->setPaper('a4','portrait')` (barryvdh/laravel-dompdf), sin clase en `app/Exports/`.
+6. `Storage::put("exports/{teamId}/{userId}/{uuid}.pdf", ...)` y marca el `ExportRequest` como `completed` con `file_path`/`file_name` (`estado_resultados_{year}_{month}.pdf`).
+
+Flujo completo export→status→download (con polling) documentado en `docs/endpoints.md` (Dashboard ejecutivo) y `docs/flows/export.md`.
 
 ### Workers en desarrollo (Sail)
 
