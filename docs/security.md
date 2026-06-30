@@ -151,6 +151,17 @@ No hay Policies extensivas — la protección vive en controllers. El único Pol
 - `TeamMemberController::store/destroy` — check owner del team, o self-remove.
 - `ReconciliationController::store/batch` — ownership de cada ID.
 - `ReconciliationController::downloadExport/checkExportStatus` — `user_id === auth::id()` (no basta con estar en el team).
+- `EmpresaPolicy`/`CategoriaPolicy` (Finanzas Fase 0, auto-descubiertas) — `viewAny` cualquier miembro; `create/update/delete` solo owner del team.
+- `EmpleadoPolicy` (Finanzas Fase 3B, auto-descubierta) — **solo owner del team en TODAS las habilidades**, incluidas `viewAny`/`view`. Justificación: el módulo Empleados expone **salarios** (fiscal y real), información sensible que no debe ver cualquier miembro del team. Un no-owner recibe **403** tanto en lectura como en mutación. (En contraste, la captura operativa de egresos manuales y recurrentes sigue siendo accesible a cualquier miembro del team.) Tests: `tests/Feature/EmpleadoTest.php`.
+
+### Módulos solo-owner vs. cualquier miembro
+
+| Módulo | Lectura (`viewAny`/`view`) | Mutación (`create`/`update`/`delete`) |
+|---|---|---|
+| Empresas, Categorías | Cualquier miembro | Solo owner |
+| Egresos, Egresos recurrentes | Cualquier miembro | Cualquier miembro |
+| **Empleados** (salarios sensibles) | **Solo owner** | **Solo owner** |
+| Tolerancia | Solo owner | Solo owner |
 
 ---
 

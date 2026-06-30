@@ -66,6 +66,9 @@ Route::middleware('auth')->group(function () {
     // Egresos recurrentes — Finanzas Fase 3 (plantillas)
     Route::resource('recurring-expenses', \App\Http\Controllers\EgresoRecurrenteController::class)->except('show');
 
+    // Empleados — Finanzas Fase 3B (plantilla + fuente de nómina recurrente, solo owner)
+    Route::resource('employees', \App\Http\Controllers\EmpleadoController::class)->except('show');
+
     // Settings Routes
     Route::get('/settings/tolerance', [App\Http\Controllers\ToleranciaController::class, 'edit'])->name('settings.tolerance');
     Route::post('/settings/tolerance', [App\Http\Controllers\ToleranciaController::class, 'update'])->name('settings.tolerance.update');
