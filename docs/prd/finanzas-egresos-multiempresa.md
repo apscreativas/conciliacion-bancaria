@@ -282,7 +282,8 @@ Cada fase es entregable, probable y no rompe lo anterior. Orden = dependencias.
 - **Criterios:** alta/edición/baja; se integran a la fuente de ingresos del P&L; tenancy test.
 - **Riesgo:** bajo.
 
-### Fase 5 — Motor de Estado de Resultados (servicio de cálculo)
+### Fase 5 — Motor de Estado de Resultados (servicio de cálculo)  ✅ CERRADA (2026-06-30)
+> Implementada en `feature/finanzas-fase5`. SDD: `docs/sdd/06-profit-loss-service.md`. Servicio `App\Services\Finance\ProfitLossService` (POPO sin estado, **sin migración**) con `forPeriod($desde, $hasta, ?empresaId)`: combina las 3 fuentes (`conciliacions.monto_aplicado` fechado por `movimientos.fecha` + `ingresos_manuales.monto` + `egresos.monto` agrupado por `categorias.grupo`), sin doble conteo de cargos, con `sin_clasificar` que cierra la identidad `utilidad_neta = ingresos − egresos`. 7 tests numéricos al centavo verdes, 0 regresiones; motor de conciliación intacto. **Decisiones:** (1) ingreso bancario fechado por `movimientos.fecha` (base flujo), no `fecha_conciliacion`; (2) `conciliacions.categoria_id` se sigue difiriendo (todo el ingreso conciliado es grupo `ingreso`, línea única); (3) el consolidado incluye el dinero sin empresa (bucket "sin asignar"), simétrico ingresos/egresos. NO incluye UI/endpoint (Fase 6).
 - **Objetivo:** el cerebro que arma el P&L de cualquier periodo/empresa.
 - **Alcance:** `App\Services\Finance\ProfitLossService` que recibe (rango de fechas, empresa_id|null=consolidado) y devuelve la estructura §4.2 con: ingresos totales, COGS, utilidad bruta, OPEX, EBITDA, utilidad neta, y márgenes. Reusa las 3 fuentes (§4.1). Sin doble conteo de cargos. Cubierto por tests unitarios con datos conocidos.
 - **Criterios:** dados datos sembrados, los totales y márgenes cuadran al centavo; consolidado = suma de empresas + sin-asignar; performance OK con índices por fecha/empresa.

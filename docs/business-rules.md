@@ -257,6 +257,35 @@ El CRUD `/cash-income` (`IngresoManualController`, modelo `IngresoManual`) regis
 
 ---
 
+## 13. Estado de Resultados (Finanzas Fase 5)
+
+El servicio `App\Services\Finance\ProfitLossService` (POPO sin estado, sin migración) arma el **Estado de Resultados (P&L) gerencial, base flujo** de un periodo. Método único `forPeriod(Carbon $desde, Carbon $hasta, ?int $empresaId = null): array`. SDD ampliado: `docs/sdd/06-profit-loss-service.md`.
+
+### 13.1 Las 3 fuentes y el mapeo grupo → renglón
+
+- **Ingreso bancario conciliado:** `SUM(conciliacions.monto_aplicado)`, fechado por **`movimientos.fecha`** (cuándo entró el cash, base flujo; join por `movimiento_id`, **NO** `fecha_conciliacion`). Línea única "bancario conciliado" — todo el ingreso conciliado es grupo `ingreso` (no se desglosa por categoría: `conciliacions.categoria_id` sigue diferido).
+- **Ingreso manual (efectivo):** `SUM(ingresos_manuales.monto)` por `fecha`. Línea "manual".
+- **Egresos** (manual/recurrente/nómina, todos en la tabla `egresos`): `SUM(egresos.monto)` por `fecha`, agrupados por `categorias.grupo`:
+    - `ingreso` → (no aplica a egresos)
+    - `costo_venta` → **COGS** → `utilidad_bruta = ingresos.total − costo_venta` → margen bruto
+    - `gasto_operativo` → **OPEX** → `ebitda = utilidad_bruta − gasto_operativo` → margen EBITDA
+    - `abajo_ebitda` → depreciación/financieros/impuestos → `utilidad_neta = ebitda − abajo_ebitda − sin_clasificar` → margen neto
+- **`sin_clasificar`** = `egresos_total − costo_venta − gasto_operativo − abajo_ebitda`: absorbe egresos con `categoria_id` NULL o grupo inesperado. Se reporta explícito para recategorizar y garantiza que el P&L cuadra exacto.
+- **Márgenes**: ratio float `round(renglón / ingresos.total, 4)` con guardia de división por cero (periodo sin ingresos → 0). Montos al centavo (`round(.,2)`) en el borde.
+- **Identidad maestra (siempre):** `utilidad_neta = ingresos.total − egresos_total`.
+
+### 13.2 Anti-doble-conteo (clave)
+
+El banco ya guarda los **cargos** (`movimientos.tipo='cargo'`). El P&L **NUNCA** suma `movimientos.tipo='cargo'`, `movimientos.monto` ni `facturas.monto`. Los egresos salen **solo** de la tabla `egresos`; el ingreso bancario es **exclusivamente** `conciliacions.monto_aplicado`. Esto evita doble conteo (y exige disciplina: todo egreso real debe registrarse manual o vía recurrencia). El cruce egreso vs cargo banco queda para Fase 7.
+
+### 13.3 Consolidado vs por empresa
+
+- `empresaId === null` → **consolidado** = suma de todas las empresas **+ el bucket "sin asignar"** (`empresa_id` NULL en conciliaciones, ingresos manuales y egresos). Simétrico entre ingresos y egresos.
+- `empresaId` dado → solo el dinero de esa empresa (`where empresa_id = $empresaId`).
+- Tenancy por `TeamOwned`: solo entra el dinero del team del usuario autenticado.
+
+---
+
 ## Referencias
 
 - `app/Services/Reconciliation/MatcherService.php`
@@ -269,3 +298,4 @@ El CRUD `/cash-income` (`IngresoManualController`, modelo `IngresoManual`) regis
 - `app/Console/Commands/GenerarNomina.php`
 - `app/Services/Finance/PayrollCalculator.php`
 - `app/Http/Controllers/IngresoManualController.php`
+- `app/Services/Finance/ProfitLossService.php`
