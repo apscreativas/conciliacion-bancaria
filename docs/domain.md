@@ -22,6 +22,7 @@ Todos los modelos de dominio usan el trait `TeamOwned` salvo los marcados como "
 | `Egreso` | `egresos` | TeamOwned | `HasFactory` | Gasto manual o generado (Finanzas Fase 2/3/3B). Clasificado por `empresa_id` (opcional) + `categoria_id` (egreso). `origen` manual/recurrente; `egreso_recurrente_id` si vino de plantilla recurrente; `empleado_id` (nullOnDelete) + `concepto_nomina` (`fiscal`/`complemento`) si vino de `nomina:generar` (Fase 3B). Índice único `egresos_recurrente_periodo_unique (egreso_recurrente_id, fecha)` para recurrentes; índice único `egresos_empleado_periodo_unique (empleado_id, fecha, concepto_nomina)` para nómina (NULLs múltiples permitidos → no afecta egresos manuales/recurrentes). `user_id` es nullable + `nullOnDelete` (Fase 3B) — un registro financiero sobrevive al borrado de su creador |
 | `EgresoRecurrente` | `egresos_recurrentes` | TeamOwned | `HasFactory` | Plantilla de gasto recurrente (Finanzas Fase 3). El comando `egresos:generar-recurrentes` crea egresos según `frecuencia`/`proxima_generacion`/vigencia. `user_id` es `nullOnDelete` (borrar al creador no borra la plantilla) |
 | `Empleado` | `empleados` | TeamOwned | `HasFactory` | Plantilla de personal (Finanzas Fase 3B); fuente del comando `nomina:generar`. `salario_fiscal`/`salario_real` mensuales, `clasificacion` (`tecnica`/`administrativa`/null), `fecha_entrada`/`fecha_baja`, `activo`. `user_id` y `empresa_id` `nullOnDelete` (borrar al creador o la empresa no borra al empleado, que es registro financiero) |
+| `IngresoManual` | `ingresos_manuales` | TeamOwned | `HasFactory` | Ingreso real en efectivo que NO pasa por banco (Finanzas Fase 4; espejo de `Egreso`). Clasificado por `empresa_id` (opcional) + `categoria_id` (tipo=ingreso, requerida a nivel app). Campos `cliente` (nullable) y `metodo` enum(`efectivo`,`otro`) default `efectivo`. FKs `empresa_id`/`categoria_id` `nullOnDelete`; `user_id` (creador) nullable + `nullOnDelete` — un registro financiero sobrevive al borrado de su creador/catálogo. Index `(team_id, fecha)`. Es una de las fuentes de ingresos del P&L (Fase 5) |
 
 ### Nota sobre `Banco`
 
@@ -41,10 +42,13 @@ Team ──* Empresa, Categoria       # Finanzas Fase 0 (tablas nuevas, sin rela
 Team ──* Egreso                   # Finanzas Fase 2
 Team ──* EgresoRecurrente         # Finanzas Fase 3
 Team ──* Empleado                 # Finanzas Fase 3B
+Team ──* IngresoManual            # Finanzas Fase 4
 EgresoRecurrente ──< Egreso (egreso_recurrente_id)  # plantilla → egresos generados (nullOnDelete)
 Empleado ──< Egreso (empleado_id) # plantilla de personal → egresos de nómina (Fase 3B, nullOnDelete)
 Empresa ──? Egreso (empresa_id)   # opcional; Categoria ──? Egreso (categoria_id); User ──? Egreso (creador, nullOnDelete)
 Empresa ──? Empleado (empresa_id) # opcional, nullOnDelete; User ──? Empleado (creador, nullOnDelete)
+Empresa ──< IngresoManual (empresa_id)  # opcional, nullOnDelete; Categoria ──< IngresoManual (categoria_id, tipo=ingreso, nullOnDelete)
+IngresoManual ──1 User (user_id)  # quién lo registró (nullOnDelete)
 
 Archivo ──1 Factura (file_id_xml)    # XMLs tienen 1 factura
 Archivo ──* Movimiento (file_id)     # Estados de cuenta tienen muchos movimientos
@@ -235,6 +239,16 @@ El polling frontend considera "worker offline" si `status=queued` y `created_at 
 - **Unique**: `(team_id, nombre)`
 - Evidencia: `2026_06_26_000002_create_categorias_table.php`
 
+#### `ingresos_manuales` (Finanzas Fase 4)
+- `id`, `team_id` (FK cascade)
+- `empresa_id` (FK empresas, nullable, nullOnDelete), `categoria_id` (FK categorias, nullable DB + **requerida a nivel app**, `tipo=ingreso`, nullOnDelete)
+- `fecha` (date), `monto` (decimal 15,2), `descripcion`
+- `cliente` (nullable)
+- `metodo` enum(`efectivo`,`otro`) default `efectivo`
+- `user_id` (creador, **nullable + nullOnDelete**), timestamps. **Index**: `(team_id, fecha)`
+- Espejo de `egresos` con categorías `tipo=ingreso` (sin `proveedor`/`metodo_pago`/`comprobante_path`/`origen`/recurrencia/empleado). Captura el efectivo no bancario; es una de las fuentes de ingresos del P&L (Fase 5).
+- Evidencia: `2026_07_01_000001_create_ingresos_manuales_table.php`
+
 ---
 
 ## Casts importantes
@@ -250,6 +264,7 @@ El polling frontend considera "worker offline" si `status=queued` y `created_at 
 - `Egreso`: `fecha => date`, `monto => decimal:2`
 - `EgresoRecurrente`: `monto => decimal:2`, `fecha_inicio`/`fecha_fin`/`proxima_generacion => date`, `activo => boolean`, `dia_del_mes`/`num_pagos`/`pagos_generados => integer`
 - `Empleado`: `fecha_entrada`/`fecha_baja => date`, `salario_fiscal`/`salario_real => decimal:2`, `activo => boolean`
+- `IngresoManual`: `fecha => date`, `monto => decimal:2`
 - `User`: `email_verified_at => datetime`, `password => hashed` (via `casts()` method en Laravel 12)
 
 ---
@@ -264,6 +279,7 @@ Localizadas en `database/factories/`:
 - `EgresoFactory` (Finanzas Fase 2; default `origen='manual'`, categoría de egreso).
 - `EgresoRecurrenteFactory` (Finanzas Fase 3; default mensual, día 1, vigencia indefinida).
 - `EmpleadoFactory` (Finanzas Fase 3B; default activo, `clasificacion='administrativa'`, salarios fiscal 20000 / real 24000).
+- `IngresoManualFactory` (Finanzas Fase 4; categoría `tipo=ingreso` via `Categoria::factory()->ingreso()`, `cliente` opcional, `metodo` random efectivo/otro).
 
 No hay factories para `Conciliacion`, `BankFormat`, `Tolerancia`, `TeamInvitation` — se crean con `forceCreate` en los tests.
 

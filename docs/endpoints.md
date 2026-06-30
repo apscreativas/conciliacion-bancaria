@@ -214,6 +214,27 @@ Comando `nomina:generar` + schedule documentados en `docs/operations.md`.
 
 ---
 
+## Ingresos manuales (Finanzas Fase 4)
+
+Resource `cash-income` `->except('show')`. Captura del ingreso real en **efectivo** (no bancario); espejo de Egresos (Fase 2) con categorías `tipo=ingreso`. Modelo/columnas en español (`IngresoManual`/`ingresos_manuales`); **rutas y Vue pages en inglés** (`cash-income`/`CashIncome`). **Acceso: cualquier miembro del team** (captura operativa; sin owner-gate). Tenancy por `TeamOwned` (registro de otro team → 404 vía route-model binding) + `ensureOwnTeam` (defense-in-depth) en edit/update/destroy. Validación en `IngresoManualRequest`: `categoria_id` requerida + `exists` scoped (team **y `tipo=ingreso`**), `monto` > 0 (`gt:0`), `empresa_id` opcional + `exists` scoped, `cliente` opcional, `metodo` ∈ efectivo/otro (default `efectivo`). `empresa_id`/`metodo` vacíos se normalizan en `prepareForValidation`.
+
+| Método | URI | Controller@action | Nombre | Tipo respuesta |
+|---|---|---|---|---|
+| GET | `/cash-income` | `IngresoManualController@index` | `cash-income.index` | Inertia `CashIncome/Index` (props: `ingresos` paginator, `empresas`, `categorias`, `total`, `totalsByCategoria`, `filters`) |
+| GET | `/cash-income/create` | `IngresoManualController@create` | `cash-income.create` | Inertia `CashIncome/Create` |
+| POST | `/cash-income` | `IngresoManualController@store` | `cash-income.store` | Redirect (set `user_id`, `team_id`) |
+| GET | `/cash-income/{cash_income}/edit` | `IngresoManualController@edit` | `cash-income.edit` | Inertia `CashIncome/Create` con `ingreso` |
+| PUT/PATCH | `/cash-income/{cash_income}` | `IngresoManualController@update` | `cash-income.update` | Redirect |
+| DELETE | `/cash-income/{cash_income}` | `IngresoManualController@destroy` | `cash-income.destroy` | Redirect |
+
+### Filtros soportados en `/cash-income`
+- `empresa_id`, `categoria_id` (single-select)
+- `date_from`, `date_to` (sobre `ingresos_manuales.fecha`); fallback `month`/`year` (`SetGlobalDateFilters`)
+- `amount_min`, `amount_max`; `per_page` (whitelist 10/25/50/100/all; basura → 25)
+- Totales (`total` + `totalsByCategoria`, con bucket "Sin categoría") calculados sobre el conjunto filtrado.
+
+---
+
 ## Settings — Tolerance
 
 | Método | URI | Controller@action | Nombre | Autorización |
