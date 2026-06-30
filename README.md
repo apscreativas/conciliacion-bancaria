@@ -211,6 +211,26 @@ sudo supervisorctl start conciliacion-exports:*
 sudo supervisorctl start conciliacion-default:*
 ```
 
+### 4b. Scheduler (cron) — egresos recurrentes y nómina
+
+El módulo Finanzas usa el scheduler de Laravel (`routes/console.php`) para `egresos:generar-recurrentes` (diario 01:00) y `nomina:generar` (diario 01:30). **Sin esta entrada de cron, esos generadores NO corren.** Añadir al crontab del usuario que ejecuta la app:
+
+```cron
+* * * * * cd /var/www/conciliacion && php artisan schedule:run >> /dev/null 2>&1
+```
+
+Verificar lo programado: `php artisan schedule:list`.
+
+### 4c. Catálogo financiero (empresas + categorías) por team
+
+El módulo Finanzas requiere que cada **team** tenga sembrado su catálogo (3 empresas + categorías del Estado de Resultados, incluidas las de nómina). El seeder es **idempotente** y siembra todos los teams existentes:
+
+```bash
+php artisan db:seed --class=Database\\Seeders\\FinanzasCatalogoSeeder --force
+```
+
+> ⚠️ Hoy **no** hay observer que siembre el catálogo al crear un team nuevo: tras alta de un team nuevo, re-ejecutar este seeder (o el owner crea su catálogo en Settings). Sin catálogo, la generación de nómina omite egresos (registra `Log::warning`) y los dashboards de finanzas salen vacíos.
+
 ### 5. Permisos de archivos
 
 ```bash
@@ -225,13 +245,14 @@ git pull origin main
 composer install --no-dev --optimize-autoloader
 npm ci && npm run build
 php artisan migrate --force
+php artisan db:seed --class=Database\\Seeders\\FinanzasCatalogoSeeder --force  # idempotente: catálogo finanzas por team
 php artisan config:cache
 php artisan route:cache
 php artisan view:cache
 sudo supervisorctl restart conciliacion-imports:* conciliacion-exports:* conciliacion-default:*
 ```
 
-> **Importante:** Los workers `queue-imports` y `queue-exports` deben estar corriendo para que la importación de archivos y la generación de reportes funcionen.
+> **Importante:** Los workers `queue-imports` y `queue-exports` deben estar corriendo para que la importación de archivos y la generación de reportes (incl. el PDF del Estado de Resultados) funcionen, y la entrada de **cron del scheduler** (§4b) debe existir para que los egresos recurrentes y la nómina se generen.
 
 ---
 
