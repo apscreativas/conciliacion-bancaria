@@ -1,4 +1,13 @@
 {
+    "Ingresos": "Ingresos",
+    "Nuevo ingreso": "Nuevo ingreso",
+    "Editar ingreso": "Editar ingreso",
+    "Cliente": "Cliente",
+    "Método": "Método",
+    "No hay ingresos en este periodo.": "No hay ingresos en este periodo.",
+    "Registra tu primer ingreso o ajusta los filtros.": "Registra tu primer ingreso o ajusta los filtros.",
+    "¿Eliminar este ingreso?": "¿Eliminar este ingreso?",
+    "Ingreso registrado exitosamente.": "Ingreso registrado exitosamente.",
     "Empleados": "Empleados",
     "Nuevo empleado": "Nuevo empleado",
     "Editar empleado": "Editar empleado",

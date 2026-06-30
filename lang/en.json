@@ -1,4 +1,13 @@
 {
+    "Ingresos": "Income",
+    "Nuevo ingreso": "New income",
+    "Editar ingreso": "Edit income",
+    "Cliente": "Customer",
+    "Método": "Method",
+    "No hay ingresos en este periodo.": "No income in this period.",
+    "Registra tu primer ingreso o ajusta los filtros.": "Record your first income or adjust the filters.",
+    "¿Eliminar este ingreso?": "Delete this income?",
+    "Ingreso registrado exitosamente.": "Income recorded successfully.",
     "Empleados": "Employees",
     "Nuevo empleado": "New employee",
     "Editar empleado": "Edit employee",
