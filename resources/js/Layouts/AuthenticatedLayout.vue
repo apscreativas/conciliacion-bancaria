@@ -93,11 +93,11 @@ onMounted(() => {
                     ? 'translate-x-0'
                     : '-translate-x-full'
             "
-            class="fixed inset-y-0 left-0 z-30 w-64 bg-gray-900 text-white transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-auto"
+            class="fixed inset-y-0 left-0 z-30 w-64 bg-gray-900 text-white transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-auto flex flex-col"
         >
             <!-- Logo Area -->
             <div
-                class="flex items-center justify-center h-16 bg-gray-900 border-b border-gray-800 shadow-md"
+                class="flex items-center justify-center h-16 bg-gray-900 border-b border-gray-800 shadow-md flex-shrink-0"
             >
                 <Link
                     :href="route('dashboard')"
@@ -109,7 +109,7 @@ onMounted(() => {
             </div>
 
             <!-- Navigation Links -->
-            <nav class="mt-5 px-2 space-y-1">
+            <nav class="mt-5 px-2 space-y-1 flex-1 overflow-y-auto min-h-0">
                 
                 <!-- Period Selector (Filters) -->
                 <div class="mb-6 px-2">
@@ -432,7 +432,7 @@ onMounted(() => {
             </nav>
 
             <!-- User Area (Bottom Sidebar) -->
-            <div class="absolute bottom-0 w-full border-t border-gray-800 p-4 bg-gray-900">
+            <div class="flex-shrink-0 w-full border-t border-gray-800 p-4 bg-gray-900">
                 <div class="flex flex-col space-y-4">
                     <!-- Controls -->
                     <div class="flex items-center justify-between">
