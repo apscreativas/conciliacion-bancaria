@@ -159,8 +159,13 @@ class GenerarNomina extends Command
             ->where('concepto_nomina', $concepto)
             ->exists();
 
-        if ($yaExiste || $dryRun) {
+        if ($yaExiste) {
             return 0;
+        }
+
+        // En dry-run contamos lo que SÍ se generaría (para un preview fiel), pero no persistimos.
+        if ($dryRun) {
+            return 1;
         }
 
         return DB::transaction(function () use ($emp, $pago, $concepto, $categoriaId, $monto, $descripcion) {

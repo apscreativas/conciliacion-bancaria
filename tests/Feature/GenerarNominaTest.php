@@ -218,13 +218,17 @@ it('fails on a malformed --month without generating anything', function () {
     expect(Egreso::withoutGlobalScopes()->whereNotNull('empleado_id')->count())->toBe(0);
 });
 
-it('does not persist anything on --dry-run', function () {
+it('does not persist anything on --dry-run but reports what it would create', function () {
     Carbon::setTestNow('2026-06-30');
     $user = User::factory()->create();
     categoriasNomina($user->current_team_id);
     $e = empleado($user, ['fecha_entrada' => '2026-01-01']);
 
-    $this->artisan('nomina:generar --month=2026-06 --dry-run')->assertSuccessful();
+    // Junio tiene 2 quincenas (15 y 30) × (fiscal + complemento) = 4 egresos que SÍ se
+    // generarían; el dry-run los cuenta en el resumen pero NO persiste.
+    $this->artisan('nomina:generar --month=2026-06 --dry-run')
+        ->expectsOutputToContain('4 egresos creados')
+        ->assertSuccessful();
 
     expect(nominaDe($e)->count())->toBe(0);
 });
