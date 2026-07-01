@@ -174,6 +174,10 @@ Algoritmo aplicado dentro de `DB::transaction` con `lockForUpdate`:
 - `DELETE /reconciliation/{id}`: elimina un solo registro. Verifica ownership vía `conciliacion.factura.team_id`.
 - `DELETE /reconciliation/group/{groupId}`: elimina todos los registros de un grupo. Filtra por `team_id` (tenant-scoped, 404 si no se encuentra).
 
+### 5.6 Auto-asignación de empresa (aditivo)
+
+Tras `reconcile` (que ahora devuelve el `group_id`), `store`/`batch` pre-asignan la empresa del grupo desde el catálogo cliente→empresa cuando el RFC tiene mapeo unívoco. NO cambia el algoritmo del matcher ni los montos. Ver §14.
+
 ---
 
 ## 6. Tolerancia
@@ -286,9 +290,52 @@ El banco ya guarda los **cargos** (`movimientos.tipo='cargo'`). El P&L **NUNCA**
 
 ---
 
+## 14. Catálogo cliente→empresa (auto-asignación de ingresos)
+
+El servicio `App\Services\Finance\ClienteEmpresaService` (POPO team-explícito) + el modelo `ClienteEmpresa` (tabla `cliente_empresas`) mantienen un **catálogo auto-aprendido RFC → empresa** que pre-asigna sola la empresa al conciliar. **Solo aplica a ingresos** (egresos capturan su empresa en su propio flujo). El catálogo se administra en `/clients` (`ClienteEmpresaController`). No cambia el algoritmo del matcher: toda la lógica es aditiva y ocurre **después** de `reconcile`, fuera de su transacción.
+
+### 14.1 Identidad y mapeo
+
+- La identidad del cliente es **`facturas.rfc`** (estable). `nombre` es solo display (último visto). Un mapeo por `(team_id, rfc)` (unique).
+- `empresa_id` es `nullOnDelete`: borrar la empresa NO borra el mapeo. `veces` cuenta cuántas veces se ha asignado (confianza); `ultima_asignacion_at`/`user_id` registran la última asignación.
+
+### 14.2 Auto-aprendizaje (`recordar`)
+
+- Cuando se asigna una empresa **no-null** a un grupo conciliado vía `updateGroupEmpresa`, el controller llama `ClienteEmpresaService::recordar(teamId, userId, rfcsDeGrupo(groupId), empresaId)`: por cada RFC único de las facturas del grupo hace `updateOrCreate(['team_id','rfc'], [...])` (**last-wins**: la última asignación gana empresa/nombre/user/fecha) e **incrementa `veces` +1**.
+- **Des-asignar** (empresa null) NO aprende nada.
+
+### 14.3 Sugerencia (`sugerirEmpresa`)
+
+Dado un conjunto de RFC, devuelve un `empresa_id` **solo si** todos los RFC que existen en el catálogo mapean a la **misma** empresa y hay al menos uno mapeado. RFC sin mapeo se ignoran. Si los mapeos difieren (multi-RFC ambiguo) o ninguno mapea → `null` (el grupo queda sin empresa).
+
+### 14.4 Auto-asignación al conciliar
+
+- `ReconciliationController::store` (manual) y `::batch` (automática) llaman `reconcile(...)` — que ahora **devuelve el `group_id`** (antes `void`; los callers previos ignoran el retorno, compatible) — y luego `sugerirEmpresa` con los RFC de esas facturas. Si hay sugerencia unívoca, `Conciliacion::where('group_id', $groupId)->where('team_id',...)->update(['empresa_id' => $sugerida])`.
+- RFC desconocido o multi-RFC ambiguo → el grupo queda sin empresa (comportamiento previo intacto).
+
+### 14.5 Aplicar catálogo al histórico (`aplicarASinEmpresa`)
+
+- `POST /clients/aplicar-sugerencias` recorre los grupos de conciliación del team con `empresa_id` null; por cada uno, si sus RFC dan sugerencia unívoca, asigna esa empresa a todo el grupo. Deja intactos los ambiguos/sin mapeo. Devuelve cuántos grupos asignó (arrastra el histórico existente).
+
+### 14.6 Detección de facturación recurrente / "dejó de facturar"
+
+Reporte derivado de `facturas` (por `rfc`, `fecha_emision`), calculado en `ClienteEmpresaController::reporteRecurrentes`. Ventana de 4 meses = mes actual + 3 previos (`subMonthsNoOverflow`). Por cada RFC:
+
+- **`recurrente`** = facturó en **≥3 de los últimos 4 meses** (meses distintos con factura ∩ ventana ≥ 3).
+- **`sin_factura_mes_actual`** = es recurrente **y** no tiene factura en el mes en curso (`Y-m`).
+- Se cruza con el catálogo para mostrar la empresa mapeada. Devuelve **solo** los recurrentes, con los "sin factura este mes" primero, luego por fecha más reciente. Es una alerta de cliente mensual que dejó de facturar.
+
+### 14.7 Tenancy
+
+Cada método del servicio recibe `teamId` explícito y aísla lectura/escritura por team con `withoutGlobalScopes()->where('team_id', ...)` — es queue-safe (no depende del scope ambiente de `TeamOwned`). El controller además valida `team_id === current_team_id` (defense in depth; registro ajeno → 404).
+
+---
+
 ## Referencias
 
 - `app/Services/Reconciliation/MatcherService.php`
+- `app/Services/Finance/ClienteEmpresaService.php`
+- `app/Http/Controllers/ClienteEmpresaController.php`
 - `app/Services/Reconciliation/DescriptionParser.php`
 - `app/Services/Xml/CfdiParserService.php`
 - `app/Services/Parsers/DynamicStatementParser.php`

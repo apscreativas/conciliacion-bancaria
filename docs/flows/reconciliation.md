@@ -59,7 +59,11 @@ POST /reconciliation
 
 ### Ejecución
 
-`MatcherService::reconcile($invoiceIds, $movementIds, 'manual', $date)` — ver sección "Algoritmo" abajo.
+`MatcherService::reconcile($invoiceIds, $movementIds, 'manual', $date)` — ver sección "Algoritmo" abajo. `reconcile` **devuelve el `group_id`** generado (antes `void`).
+
+### Auto-asignación de empresa (aditivo, post-reconcile)
+
+Fuera de la transacción del motor, `store` usa el `group_id` para pre-asignar la empresa del grupo desde el **catálogo cliente→empresa**: `sugerirEmpresa(teamId, rfcs de las facturas)`; si hay sugerencia unívoca → `update(['empresa_id' => ...])` sobre el grupo. RFC desconocido o multi-RFC ambiguo → grupo sin empresa. **No cambia el algoritmo de matching ni los montos.** Ver `docs/business-rules.md` §14.
 
 ### Response
 
@@ -115,8 +119,9 @@ POST /reconciliation/batch
 ```
 
 - Valida ownership de cada par.
-- Por cada par: `MatcherService::reconcile([inv_id], [mov_id], 'automatico', $movement->fecha)`.
+- Por cada par: `$groupId = MatcherService::reconcile([inv_id], [mov_id], 'automatico', $movement->fecha)`.
 - Cada par genera un `group_id` UUID distinto (no se agrupan).
+- Auto-asignación (aditiva): con el `group_id` devuelto, `sugerirEmpresa(teamId, [rfc de la factura])`; si hay mapeo → asigna la empresa al grupo (igual que `store`). Ver `docs/business-rules.md` §14.
 
 ---
 
@@ -130,6 +135,8 @@ Aplicado siempre dentro de `DB::transaction` con `lockForUpdate` sobre facturas 
 - `$movementIds` — array de IDs de movimiento.
 - `$type` — `'manual'` o `'automatico'`.
 - `$date` — fecha a registrar en `fecha_conciliacion`.
+
+**Retorno**: `string` — el `group_id` (UUID) generado para el batch. (Antes `void`; expuesto para permitir la auto-asignación de empresa post-reconcile sin heurísticas frágiles. No cambia la lógica de matching/saldos/`lockForUpdate`.)
 
 ### Algoritmo de saldo restante
 

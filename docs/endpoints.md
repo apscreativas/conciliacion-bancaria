@@ -122,6 +122,29 @@ Ver `flows/export.md` para detalle.
 
 ---
 
+## Clientes — Catálogo cliente→empresa (solo Ingresos)
+
+Catálogo auto-aprendido/editable **RFC del cliente → empresa** que pre-asigna sola la empresa al conciliar ingresos. Modelo/columnas en español (`ClienteEmpresa`/`cliente_empresas`); **rutas y Vue page en inglés** (`clients`/`Clients`). **Acceso: cualquier miembro del team** (igual que la conciliación; sin owner-gate). Scoping por team explícito con `current_team_id` (defense in depth sobre el global scope `TeamOwned`): un registro de otro team → **404**. Controller `ClienteEmpresaController`; servicio `ClienteEmpresaService`.
+
+| Método | URI | Controller@action | Nombre | Notas |
+|---|---|---|---|---|
+| GET | `/clients` | `ClienteEmpresaController@index` | `clients.index` | Inertia `Clients/Index` (props: `catalogo`, `empresas` activas, `recurrentes`) |
+| PATCH | `/clients/{client}` | `ClienteEmpresaController@update` | `clients.update` | Override manual del `empresa_id` del mapeo. Redirect. `empresa_id` `present`+`nullable`+`exists` scoped al team (nullable para des-asignar el default); registro de otro team → 404 |
+| POST | `/clients/aplicar-sugerencias` | `ClienteEmpresaController@aplicarSugerencias` | `clients.apply` | Aplica el catálogo a las conciliaciones (ingresos) del team sin empresa (`ClienteEmpresaService::aplicarASinEmpresa`); redirect con conteo de grupos asignados |
+
+### Props de `Clients/Index`
+
+- `catalogo`: mapeo aprendido/editable rfc→empresa (`id`, `rfc`, `nombre`, `empresa {id,nombre,color}|null`, `veces`, `ultima_asignacion_at`), ordenado por `veces` desc.
+- `empresas`: empresas activas del team (`ResolvesExpenseOptions::empresasActivas`) para el selector de default.
+- `recurrentes`: reporte de facturación recurrente / "dejó de facturar" (ver `docs/business-rules.md` §14) — solo clientes recurrentes, con los "sin factura este mes" primero.
+
+### Aprendizaje / auto-asignación (aditivo, no toca el motor)
+
+- `PATCH /reconciliation/group/{groupId}/empresa` (`updateGroupEmpresa`): tras asignar `empresa_id` no-null, llama `ClienteEmpresaService::recordar(...)` → aprende el mapeo rfc→empresa de las facturas del grupo. Des-asignar (null) no aprende.
+- `POST /reconciliation` (`store`) y `POST /reconciliation/batch` (`batch`): tras `reconcile(...)` (que ahora devuelve el `group_id`), si los RFC de las facturas dan sugerencia unívoca vía `sugerirEmpresa(...)`, se asigna la empresa al grupo. RFC desconocido o multi-RFC ambiguo → grupo sin empresa (como hoy).
+
+---
+
 ## Movimientos
 
 | Método | URI | Controller@action | Nombre | Notas |
