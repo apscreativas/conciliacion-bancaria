@@ -523,7 +523,7 @@ test('updateGroupEmpresa asigna al grupo pero NO re-aprende cuando el RFC está 
     $fresh = $cliente->fresh();
     expect($fresh->empresa_id)->toBe($empresaA->id)
         ->and($fresh->veces)->toBe(2)
-        ->and((bool) $fresh->excluido)->toBeTrue();
+        ->and($fresh->excluido)->toBeTrue();
 });
 
 test('store deja el grupo sin empresa cuando el RFC es desconocido', function () {

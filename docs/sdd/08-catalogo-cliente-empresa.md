@@ -36,7 +36,7 @@ Evidencia: `2026_07_01_000001_create_cliente_empresas_table.php`, `2026_07_01_00
 | Método | Ruta | Controller | Notas (auth, ownership) |
 |---|---|---|---|
 | GET | `/clients` | `ClienteEmpresaController@index` | Cualquier miembro; Inertia `Clients/Index` (`catalogo`, `empresas`, `recurrentes`) |
-| PATCH | `/clients/{client}` | `ClienteEmpresaController@update` | PATCH **parcial** (solo claves presentes): `empresa_id` (`sometimes`+`nullable`+`exists` scoped) y `excluido` (`sometimes`+`boolean`). Otro team → 404 |
+| PATCH | `/clients/{client}` | `ClienteEmpresaController@update` | PATCH **parcial** (solo claves presentes): `empresa_id` (`sometimes`+`nullable`+`exists` scoped) y `excluido` (`sometimes`+`boolean`). Sin ninguna clave reconocida → 422 (nunca no-op silencioso). Otro team → 404 |
 | POST | `/clients/aplicar-sugerencias` | `ClienteEmpresaController@aplicarSugerencias` | Aplica el catálogo al histórico sin empresa; redirect con conteo |
 
 Además (aditivo, no rutas nuevas): `store`/`batch`/`updateGroupEmpresa` de `ReconciliationController` invocan `ClienteEmpresaService`.

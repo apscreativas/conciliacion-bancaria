@@ -101,8 +101,7 @@ class ClienteEmpresaService
         $mapa = ClienteEmpresa::withoutGlobalScopes()
             ->where('team_id', $teamId)
             ->whereIn('rfc', $rfcs)
-            ->whereNotNull('empresa_id')
-            ->where('excluido', false)
+            ->aplicable()
             ->pluck('empresa_id', 'rfc')
             ->all();
 
@@ -198,12 +197,11 @@ class ClienteEmpresaService
                 ->all()
             );
 
-        // 1 query: catálogo del team como mapa rfc => empresa_id (sin excluidos:
-        // un RFC excluido bloquea a su grupo en la regla estricta).
+        // 1 query: catálogo del team como mapa rfc => empresa_id (solo aplicables:
+        // un RFC excluido queda fuera y bloquea a su grupo en la regla estricta).
         $mapa = ClienteEmpresa::withoutGlobalScopes()
             ->where('team_id', $teamId)
-            ->whereNotNull('empresa_id')
-            ->where('excluido', false)
+            ->aplicable()
             ->pluck('empresa_id', 'rfc')
             ->all();
 

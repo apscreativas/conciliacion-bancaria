@@ -3,6 +3,7 @@ import AuthenticatedLayout from "@/Layouts/AuthenticatedLayout.vue";
 import EmptyState from "@/Components/EmptyState.vue";
 import PrimaryButton from "@/Components/PrimaryButton.vue";
 import { Head, router } from "@inertiajs/vue3";
+import { ref } from "vue";
 import { formatDate } from "@/utils/format";
 
 interface Empresa {
@@ -55,11 +56,26 @@ const assignEmpresa = (row: CatalogoRow, event: Event) => {
 
 // "Respetar etiquetas individuales": excluye al cliente del catálogo (no aprende,
 // no sugiere, no se aplica). El mapeo de empresa queda inerte hasta des-excluir.
-const toggleExcluido = (row: CatalogoRow) => {
+// Se lee el estado real del checkbox (no el prop, que puede estar viejo), se
+// deshabilita la fila mientras el PATCH está en vuelo y se revierte el visual
+// si el request falla — así el checkbox nunca miente sobre el estado en BD.
+const togglingIds = ref<Set<number>>(new Set());
+
+const toggleExcluido = (row: CatalogoRow, event: Event) => {
+    const checkbox = event.target as HTMLInputElement;
+    togglingIds.value.add(row.id);
     router.patch(
         route("clients.update", row.id),
-        { excluido: !row.excluido },
-        { preserveScroll: true },
+        { excluido: checkbox.checked },
+        {
+            preserveScroll: true,
+            onError: () => {
+                checkbox.checked = row.excluido;
+            },
+            onFinish: () => {
+                togglingIds.value.delete(row.id);
+            },
+        },
     );
 };
 
@@ -203,8 +219,9 @@ const aplicarCatalogo = () => {
                                         <input
                                             type="checkbox"
                                             :checked="row.excluido"
-                                            @change="toggleExcluido(row)"
-                                            class="rounded border-gray-300 dark:border-gray-700 text-indigo-600 focus:ring-indigo-500"
+                                            :disabled="togglingIds.has(row.id)"
+                                            @change="toggleExcluido(row, $event)"
+                                            class="rounded border-gray-300 dark:border-gray-700 text-indigo-600 focus:ring-indigo-500 disabled:opacity-50"
                                         />
                                         <span class="text-xs text-gray-500">{{ $t("Respetar etiquetas") }}</span>
                                     </label>

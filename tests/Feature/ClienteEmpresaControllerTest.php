@@ -168,6 +168,20 @@ it('updating empresa_id alone does not reset excluido (PATCH parcial)', function
         ->and($fresh->excluido)->toBeTrue();
 });
 
+it('rejects a PATCH without any recognized key (no silent no-op)', function () {
+    $user = User::factory()->create();
+    $client = ClienteEmpresa::factory()->create(['team_id' => $user->current_team_id]);
+
+    // Payload vacío o con solo claves desconocidas (typo) → 422, no falso éxito.
+    actingAs($user)->patch(route('clients.update', $client->id), [])
+        ->assertSessionHasErrors('empresa_id');
+
+    actingAs($user)->patch(route('clients.update', $client->id), ['excluded' => true])
+        ->assertSessionHasErrors('empresa_id');
+
+    expect($client->fresh()->excluido)->toBeFalse();
+});
+
 it('index exposes excluido in the catalogo payload', function () {
     $user = User::factory()->create();
     $team = $user->currentTeam;

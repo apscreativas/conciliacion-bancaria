@@ -129,7 +129,7 @@ Catálogo auto-aprendido/editable **RFC del cliente → empresa** que pre-asigna
 | Método | URI | Controller@action | Nombre | Notas |
 |---|---|---|---|---|
 | GET | `/clients` | `ClienteEmpresaController@index` | `clients.index` | Inertia `Clients/Index` (props: `catalogo`, `empresas` activas, `recurrentes`) |
-| PATCH | `/clients/{client}` | `ClienteEmpresaController@update` | `clients.update` | PATCH **parcial** (solo actualiza claves presentes; payload vacío → no-op). `empresa_id` `sometimes`+`nullable`+`exists` scoped al team (null des-asigna el default); `excluido` `sometimes`+`boolean` ("respetar etiquetas individuales" — ver `business-rules.md` §14.7). Redirect. Registro de otro team → 404 |
+| PATCH | `/clients/{client}` | `ClienteEmpresaController@update` | `clients.update` | PATCH **parcial** (solo actualiza claves presentes; sin ninguna clave reconocida → **422**, nunca no-op silencioso). `empresa_id` `sometimes`+`nullable`+`exists` scoped al team (null des-asigna el default); `excluido` `sometimes`+`boolean` ("respetar etiquetas individuales" — ver `business-rules.md` §14.7). Redirect. Registro de otro team → 404 |
 | POST | `/clients/aplicar-sugerencias` | `ClienteEmpresaController@aplicarSugerencias` | `clients.apply` | Aplica el catálogo a las conciliaciones (ingresos) del team sin empresa (`ClienteEmpresaService::aplicarASinEmpresa`); salta grupos con RFC excluido; redirect con conteo de grupos asignados |
 
 ### Props de `Clients/Index`

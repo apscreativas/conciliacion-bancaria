@@ -10,6 +10,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -80,9 +81,15 @@ class ClienteEmpresaController extends Controller
             'excluido' => ['sometimes', 'boolean'],
         ]);
 
-        if ($validated !== []) {
-            $client->update($validated);
+        // PATCH parcial pero nunca un no-op silencioso: sin ninguna clave
+        // reconocida (payload vacío o typo) → 422, no un falso "éxito".
+        if ($validated === []) {
+            throw ValidationException::withMessages([
+                'empresa_id' => 'Nada que actualizar: envía empresa_id y/o excluido.',
+            ]);
         }
+
+        $client->update($validated);
 
         return back()->with('success', 'Cliente actualizado.');
     }
@@ -122,10 +129,9 @@ class ClienteEmpresaController extends Controller
             ->all();
 
         // Mapa rfc → empresa desde el catálogo (para mostrar la empresa por defecto).
-        // Los excluidos se muestran "Sin asignar": su empresa no se va a aplicar.
+        // Solo aplicables: los excluidos se muestran "Sin asignar" (su empresa no se aplica).
         $mapaEmpresa = ClienteEmpresa::where('team_id', $teamId)
-            ->whereNotNull('empresa_id')
-            ->where('excluido', false)
+            ->aplicable()
             ->with('empresa:id,nombre,color')
             ->get()
             ->keyBy('rfc');
