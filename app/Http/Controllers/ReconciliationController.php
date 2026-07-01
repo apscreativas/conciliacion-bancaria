@@ -6,6 +6,7 @@ use App\Models\Conciliacion;
 use App\Models\Empresa;
 use App\Models\Factura;
 use App\Models\Movimiento;
+use App\Services\Finance\ClienteEmpresaService;
 use App\Services\Reconciliation\MatcherService;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -123,7 +124,7 @@ class ReconciliationController extends Controller
         ]);
     }
 
-    public function batch(Request $request, MatcherService $matcher)
+    public function batch(Request $request, MatcherService $matcher, ClienteEmpresaService $svc)
     {
         $request->validate([
             'matches' => 'required|array',
@@ -146,19 +147,30 @@ class ReconciliationController extends Controller
         foreach ($request->matches as $match) {
             $movement = Movimiento::where('team_id', $teamId)->find($match['movement_id']);
 
-            $matcher->reconcile(
+            $groupId = $matcher->reconcile(
                 [$match['invoice_id']],
                 [$match['movement_id']],
                 'automatico',
                 $movement ? $movement->fecha : null
             );
+
+            // Auto-asignación de empresa desde el catálogo (aditivo). RFC desconocido → sin empresa.
+            $invoice = Factura::where('team_id', $teamId)->find($match['invoice_id']);
+            $sugerida = $invoice ? $svc->sugerirEmpresa($teamId, [$invoice->rfc]) : null;
+
+            if ($sugerida !== null) {
+                Conciliacion::where('group_id', $groupId)
+                    ->where('team_id', $teamId)
+                    ->update(['empresa_id' => $sugerida]);
+            }
+
             $count++;
         }
 
         return redirect()->route('reconciliation.index')->with('success', "Se han conciliado {$count} registros exitosamente.");
     }
 
-    public function store(Request $request, MatcherService $matcher)
+    public function store(Request $request, MatcherService $matcher, ClienteEmpresaService $svc)
     {
         $request->validate([
             'invoice_ids' => 'required|array',
@@ -187,7 +199,20 @@ class ReconciliationController extends Controller
             }
         }
 
-        $matcher->reconcile($request->invoice_ids, $request->movement_ids, 'manual', $request->conciliacion_at);
+        $groupId = $matcher->reconcile($request->invoice_ids, $request->movement_ids, 'manual', $request->conciliacion_at);
+
+        // Auto-asignación de empresa desde el catálogo (aditivo, fuera de la transacción del
+        // motor). Si el/los RFC de estas facturas dan una sugerencia unívoca, se aplica; si el
+        // RFC es desconocido o multi-RFC ambiguo, el grupo queda sin empresa (como hoy).
+        $teamId = auth()->user()->current_team_id;
+        $rfcs = $invoices->pluck('rfc')->all();
+        $sugerida = $svc->sugerirEmpresa($teamId, $rfcs);
+
+        if ($sugerida !== null) {
+            Conciliacion::where('group_id', $groupId)
+                ->where('team_id', $teamId)
+                ->update(['empresa_id' => $sugerida]);
+        }
 
         return back()->with('success', 'Conciliación manual registrada exitosamente.');
     }
@@ -653,7 +678,7 @@ class ReconciliationController extends Controller
      * Asigna (o des-asigna con null) la empresa de un grupo conciliado, a nivel group_id.
      * Aditivo: NO toca el motor de matching ni montos. Espeja destroyGroup en tenancy.
      */
-    public function updateGroupEmpresa(Request $request, $groupId): \Illuminate\Http\RedirectResponse
+    public function updateGroupEmpresa(Request $request, $groupId, ClienteEmpresaService $svc): \Illuminate\Http\RedirectResponse
     {
         $teamId = auth()->user()->current_team_id;
 
@@ -678,6 +703,13 @@ class ReconciliationController extends Controller
         }
 
         $query->update(['empresa_id' => $validated['empresa_id']]);
+
+        // Aprendizaje del catálogo cliente→empresa (aditivo): al asignar una empresa,
+        // memorizamos el mapeo rfc→empresa de las facturas del grupo. Al des-asignar
+        // (null) no aprendemos nada.
+        if ($validated['empresa_id'] !== null) {
+            $svc->recordar($teamId, auth()->id(), $svc->rfcsDeGrupo($groupId, $teamId), $validated['empresa_id']);
+        }
 
         return back()->with('success', 'Empresa asignada al grupo exitosamente.');
     }

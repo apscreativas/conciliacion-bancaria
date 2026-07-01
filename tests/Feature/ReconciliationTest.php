@@ -1,12 +1,14 @@
 <?php
 
-use App\Models\Factura;
-use App\Models\Movimiento;
-use App\Models\User;
-use App\Models\Team;
-use App\Models\Conciliacion;
 use App\Models\Archivo;
 use App\Models\Banco;
+use App\Models\ClienteEmpresa;
+use App\Models\Conciliacion;
+use App\Models\Empresa;
+use App\Models\Factura;
+use App\Models\Movimiento;
+use App\Models\Team;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
 
@@ -19,13 +21,13 @@ test('workbench page retrieves unreconciled items', function () {
     $user->save();
 
     $archivo = Archivo::forceCreate([
-       'user_id' => $user->id,
-       'team_id' => $team->id,
-       'path' => 'dummy.xml',
-       'mime' => 'application/xml',
-       'size' => 123,
-       'checksum' => 'hash',
-       'estatus' => 'processed',
+        'user_id' => $user->id,
+        'team_id' => $team->id,
+        'path' => 'dummy.xml',
+        'mime' => 'application/xml',
+        'size' => 123,
+        'checksum' => 'hash',
+        'estatus' => 'processed',
     ]);
 
     // Create Invoice
@@ -58,15 +60,15 @@ test('auto reconciliation endpoint returns matches', function () {
     $user->save();
 
     $archivo = Archivo::forceCreate([
-       'user_id' => $user->id,
-       'team_id' => $team->id,
-       'path' => 'dummy.xml',
-       'mime' => 'application/xml',
-       'size' => 123,
-       'checksum' => 'hash',
-       'estatus' => 'processed',
+        'user_id' => $user->id,
+        'team_id' => $team->id,
+        'path' => 'dummy.xml',
+        'mime' => 'application/xml',
+        'size' => 123,
+        'checksum' => 'hash',
+        'estatus' => 'processed',
     ]);
-    
+
     $banco = Banco::forceCreate(['nombre' => 'Bank', 'codigo' => 'B001']);
 
     // Match Pair
@@ -112,15 +114,15 @@ test('manual reconciliation stores record', function () {
     $user->save();
 
     $archivo = Archivo::forceCreate([
-       'user_id' => $user->id,
-       'team_id' => $team->id,
-       'path' => 'dummy.xml',
-       'mime' => 'application/xml',
-       'size' => 123,
-       'checksum' => 'hash',
-       'estatus' => 'processed',
+        'user_id' => $user->id,
+        'team_id' => $team->id,
+        'path' => 'dummy.xml',
+        'mime' => 'application/xml',
+        'size' => 123,
+        'checksum' => 'hash',
+        'estatus' => 'processed',
     ]);
-    
+
     $banco = Banco::forceCreate(['nombre' => 'Bank', 'codigo' => 'B001']);
 
     $factura = Factura::create([
@@ -307,15 +309,15 @@ test('cannot reconcile items from another team', function () {
     $otherTeam = Team::forceCreate(['user_id' => $otherUser->id, 'name' => 'Other Team', 'personal_team' => true]); // Added personal_team
 
     $archivo = Archivo::forceCreate([
-       'user_id' => $otherUser->id,
-       'team_id' => $otherTeam->id,
-       'path' => 'dummy.xml',
-       'mime' => 'application/xml',
-       'size' => 123,
-       'checksum' => 'hash',
-       'estatus' => 'processed',
+        'user_id' => $otherUser->id,
+        'team_id' => $otherTeam->id,
+        'path' => 'dummy.xml',
+        'mime' => 'application/xml',
+        'size' => 123,
+        'checksum' => 'hash',
+        'estatus' => 'processed',
     ]);
-    
+
     // Invoice belongs to OTHER team
     $factura = Factura::create([
         'user_id' => $otherUser->id,
@@ -327,7 +329,7 @@ test('cannot reconcile items from another team', function () {
         'rfc' => 'TEST',
         'nombre' => 'Client',
     ]);
-    
+
     $banco = Banco::forceCreate(['nombre' => 'Bank', 'codigo' => 'B001']);
 
     // Movement belongs to MY team (valid)
@@ -347,15 +349,125 @@ test('cannot reconcile items from another team', function () {
     // Expecting 500 or Exception because IDOR check -> 'Invalid or unauthorized records selected.'
     // Since MatcherService throws generic Exception, Laravel might render 500 in test.
     // However, without handling, it bubbles up.
-    
+
     // Let's expect an exception.
     $this->withoutExceptionHandling();
     $this->expectException(\Exception::class);
     $this->expectExceptionMessage('Invalid or unauthorized records selected');
 
-    $this->actingAs($user) 
+    $this->actingAs($user)
         ->post(route('reconciliation.store'), [
             'invoice_ids' => [$factura->id],
             'movement_ids' => [$movimiento->id],
         ]);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Catálogo cliente→empresa: aprendizaje y auto-asignación (solo ingresos, aditivo).
+// ─────────────────────────────────────────────────────────────────────────────
+function ceSetup(): array
+{
+    $user = User::factory()->create();
+    $team = Team::forceCreate(['user_id' => $user->id, 'name' => 'CE Team', 'personal_team' => true]);
+    $user->current_team_id = $team->id;
+    $user->save();
+
+    $archivo = Archivo::forceCreate([
+        'user_id' => $user->id,
+        'team_id' => $team->id,
+        'path' => 'dummy.xml',
+        'mime' => 'application/xml',
+        'size' => 123,
+        'checksum' => 'hash-ce-'.uniqid(),
+        'estatus' => 'processed',
+    ]);
+    $banco = Banco::firstOrCreate(['codigo' => 'B001'], ['nombre' => 'Bank']);
+
+    return [$user, $team, $archivo, $banco];
+}
+
+test('updateGroupEmpresa aprende el mapeo cliente→empresa', function () {
+    [$user, $team, $archivo, $banco] = ceSetup();
+    $empresa = Empresa::factory()->create(['team_id' => $team->id]);
+
+    $factura = Factura::create([
+        'user_id' => $user->id, 'team_id' => $team->id, 'file_id_xml' => $archivo->id,
+        'uuid' => 'UUID-LEARN', 'monto' => 500.00, 'fecha_emision' => '2026-01-10',
+        'rfc' => 'LEARN010101AAA', 'nombre' => 'Cliente Learn',
+    ]);
+    $movimiento = Movimiento::create([
+        'user_id' => $user->id, 'team_id' => $team->id, 'banco_id' => $banco->id, 'file_id' => $archivo->id,
+        'fecha' => '2026-01-12', 'monto' => 500.00, 'tipo' => 'abono', 'descripcion' => 'Pago', 'hash' => 'h-learn',
+    ]);
+
+    // Concilia manualmente (RFC desconocido → sin empresa aún)
+    $this->actingAs($user)->post(route('reconciliation.store'), [
+        'invoice_ids' => [$factura->id], 'movement_ids' => [$movimiento->id],
+    ])->assertRedirect();
+
+    $groupId = Conciliacion::where('factura_id', $factura->id)->value('group_id');
+
+    // Asigna empresa al grupo → debe aprender el mapeo
+    $this->actingAs($user)->patch(route('reconciliation.group.empresa.update', $groupId), [
+        'empresa_id' => $empresa->id,
+    ])->assertRedirect();
+
+    $this->assertDatabaseHas('cliente_empresas', [
+        'team_id' => $team->id,
+        'rfc' => 'LEARN010101AAA',
+        'empresa_id' => $empresa->id,
+    ]);
+});
+
+test('store auto-asigna la empresa cuando el RFC ya está en el catálogo', function () {
+    [$user, $team, $archivo, $banco] = ceSetup();
+    $empresa = Empresa::factory()->create(['team_id' => $team->id]);
+
+    // Catálogo pre-cargado: RFC conocido → empresa
+    ClienteEmpresa::create([
+        'team_id' => $team->id, 'rfc' => 'KNOWN010101AAA', 'nombre' => 'Cliente Conocido',
+        'empresa_id' => $empresa->id, 'veces' => 1, 'ultima_asignacion_at' => now(), 'user_id' => $user->id,
+    ]);
+
+    $factura = Factura::create([
+        'user_id' => $user->id, 'team_id' => $team->id, 'file_id_xml' => $archivo->id,
+        'uuid' => 'UUID-KNOWN', 'monto' => 300.00, 'fecha_emision' => '2026-01-10',
+        'rfc' => 'KNOWN010101AAA', 'nombre' => 'Cliente Conocido',
+    ]);
+    $movimiento = Movimiento::create([
+        'user_id' => $user->id, 'team_id' => $team->id, 'banco_id' => $banco->id, 'file_id' => $archivo->id,
+        'fecha' => '2026-01-12', 'monto' => 300.00, 'tipo' => 'abono', 'descripcion' => 'Pago', 'hash' => 'h-known',
+    ]);
+
+    $this->actingAs($user)->post(route('reconciliation.store'), [
+        'invoice_ids' => [$factura->id], 'movement_ids' => [$movimiento->id],
+    ])->assertRedirect();
+
+    $this->assertDatabaseHas('conciliacions', [
+        'factura_id' => $factura->id,
+        'empresa_id' => $empresa->id,
+    ]);
+});
+
+test('store deja el grupo sin empresa cuando el RFC es desconocido', function () {
+    [$user, $team, $archivo, $banco] = ceSetup();
+
+    $factura = Factura::create([
+        'user_id' => $user->id, 'team_id' => $team->id, 'file_id_xml' => $archivo->id,
+        'uuid' => 'UUID-UNK', 'monto' => 300.00, 'fecha_emision' => '2026-01-10',
+        'rfc' => 'UNKNOWN010101X', 'nombre' => 'Cliente Nuevo',
+    ]);
+    $movimiento = Movimiento::create([
+        'user_id' => $user->id, 'team_id' => $team->id, 'banco_id' => $banco->id, 'file_id' => $archivo->id,
+        'fecha' => '2026-01-12', 'monto' => 300.00, 'tipo' => 'abono', 'descripcion' => 'Pago', 'hash' => 'h-unk',
+    ]);
+
+    $this->actingAs($user)->post(route('reconciliation.store'), [
+        'invoice_ids' => [$factura->id], 'movement_ids' => [$movimiento->id],
+    ])->assertRedirect();
+
+    $this->assertDatabaseHas('conciliacions', [
+        'factura_id' => $factura->id,
+        'empresa_id' => null,
+    ]);
 });

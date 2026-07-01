@@ -162,10 +162,15 @@ class MatcherService
 
     /**
      * Execute a reconciliation match.
+     *
+     * @return string El group_id (UUID) del grupo de conciliación creado. Se expone
+     *                para permitir pasos aditivos post-reconcile (p. ej. auto-asignar
+     *                empresa desde el catálogo cliente→empresa) sin heurísticas frágiles.
+     *                Los callers que lo ignoran siguen siendo compatibles.
      */
-    public function reconcile(array $invoiceIds, array $movementIds, string $type = 'manual', ?string $date = null): void
+    public function reconcile(array $invoiceIds, array $movementIds, string $type = 'manual', ?string $date = null): string
     {
-        DB::transaction(function () use ($invoiceIds, $movementIds, $type, $date) {
+        return DB::transaction(function () use ($invoiceIds, $movementIds, $type, $date) {
             $teamId = auth()->user()->current_team_id;
             $groupId = \Illuminate\Support\Str::uuid();
 
@@ -247,6 +252,8 @@ class MatcherService
                     }
                 }
             }
+
+            return (string) $groupId;
         });
     }
 }
