@@ -93,9 +93,38 @@ it('renders the executive dashboard for the owner with matching P&L figures', fu
             ->has('pnlYoY')
             ->has('porEmpresa', 1)
             ->has('empresas', 1)
+            // Analítica temporal (Dashboard v2, BLOQUE 2).
+            ->has('series')
+            ->has('ingresoEmpresaSeries')
+            ->has('egresosPorCategoria')
+            ->has('egresosPorNaturaleza')
+            ->has('topProveedores')
+            ->has('nominaRollup')
+            ->where('filters.months', 12)
             // Inertia serializa floats enteros como int en JSON → comparar con int.
             ->where('pnl.ingresos.total', 7000)
             ->where('pnl.utilidad_neta', 6000)
+        );
+});
+
+it('normalizes an invalid months window to the default of 12', function () {
+    $owner = User::factory()->create();
+
+    actingAs($owner)->get(route('executive', ['month' => 6, 'year' => 2026, 'months' => 99]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('filters.months', 12)
+        );
+});
+
+it('accepts a 6-month trend window', function () {
+    $owner = User::factory()->create();
+
+    actingAs($owner)->get(route('executive', ['month' => 6, 'year' => 2026, 'months' => 6]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('filters.months', 6)
+            ->has('series', 6)
         );
 });
 
