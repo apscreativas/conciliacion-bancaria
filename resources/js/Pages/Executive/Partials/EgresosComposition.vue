@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import VueApexCharts from "vue3-apexcharts";
-import { trans } from "laravel-vue-i18n";
+import { wTrans } from "laravel-vue-i18n";
 import { formatCurrency } from "@/utils/format";
 import { CHART_COLORS, type MonthPoint, type CategoriaEgreso } from "../types";
 
@@ -12,10 +12,10 @@ const props = defineProps<{
 
 // ── Barras apiladas por mes: COGS / OPEX / abajo EBITDA / sin clasificar ──
 const stackedSeries = computed(() => [
-    { name: trans("Costo de venta"), data: props.series.map((m) => m.costo_venta) },
-    { name: trans("Gasto operativo"), data: props.series.map((m) => m.gasto_operativo) },
-    { name: trans("Debajo de EBITDA"), data: props.series.map((m) => m.abajo_ebitda) },
-    { name: trans("Sin clasificar"), data: props.series.map((m) => m.sin_clasificar) },
+    { name: wTrans("Costo de venta").value, data: props.series.map((m) => m.costo_venta) },
+    { name: wTrans("Gasto operativo").value, data: props.series.map((m) => m.gasto_operativo) },
+    { name: wTrans("Debajo de EBITDA").value, data: props.series.map((m) => m.abajo_ebitda) },
+    { name: wTrans("Sin clasificar").value, data: props.series.map((m) => m.sin_clasificar) },
 ]);
 
 const stackedOptions = computed(() => ({
@@ -40,7 +40,7 @@ const donut = computed(() => {
     const labels = top.map((c) => c.nombre);
     const values = top.map((c) => Number(c.total));
     if (resto > 0) {
-        labels.push(trans("Otros"));
+        labels.push(wTrans("Otros").value);
         values.push(resto);
     }
     return { labels, values };

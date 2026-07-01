@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import AuthenticatedLayout from "@/Layouts/AuthenticatedLayout.vue";
 import { Head, router, usePage } from "@inertiajs/vue3";
-import { ref, computed, onUnmounted } from "vue";
+import { ref, computed, watch, onUnmounted } from "vue";
 import { formatCurrency } from "@/utils/format";
 import { trans } from "laravel-vue-i18n";
 import axios from "axios";
@@ -60,6 +60,18 @@ const empresaId = ref<string>(
     props.filters.empresa_id != null ? String(props.filters.empresa_id) : "",
 );
 const months = ref<string>(String(props.filters.months || 12));
+
+// Con preserveState:true los refs no se re-siembran tras cada visita; si el server
+// normaliza un filtro distinto (p.ej. months=99 → 12), re-sincronizamos los <select>
+// para que siempre reflejen el filtro efectivamente aplicado.
+watch(
+    () => props.filters,
+    (f) => {
+        granularidad.value = f.granularidad || "mensual";
+        empresaId.value = f.empresa_id != null ? String(f.empresa_id) : "";
+        months.value = String(f.months || 12);
+    },
+);
 
 const granularidades = [
     { value: "mensual", label: "Mensual" },
@@ -359,13 +371,21 @@ const pollExport = (id: number) => {
                                     ></span>
                                     <span class="truncate">{{ e.nombre }}</span>
                                 </div>
-                                <div class="flex-1 bg-gray-100 dark:bg-gray-700 rounded h-6 overflow-hidden">
-                                    <div
-                                        class="h-6 rounded flex items-center justify-end pr-2 text-xs text-white font-medium"
-                                        :style="{ background: e.color || '#3B82F6', width: empresaBarWidth(e) }"
+                                <div class="flex-1 flex items-center gap-2">
+                                    <div class="flex-1 bg-gray-100 dark:bg-gray-700 rounded h-6 overflow-hidden">
+                                        <div
+                                            class="h-6 rounded"
+                                            :style="{ background: e.color || '#3B82F6', width: empresaBarWidth(e) }"
+                                        ></div>
+                                    </div>
+                                    <span
+                                        class="w-16 text-right text-xs font-semibold shrink-0"
+                                        :class="Number(e.pnl.margen_neto) < 0
+                                            ? 'text-red-600 dark:text-red-400'
+                                            : 'text-gray-700 dark:text-gray-300'"
                                     >
                                         {{ pct(e.pnl.margen_neto) }}
-                                    </div>
+                                    </span>
                                 </div>
                                 <div class="w-32 text-right text-sm font-semibold text-gray-900 dark:text-white shrink-0">
                                     {{ formatCurrency(e.pnl.ingresos.total) }}

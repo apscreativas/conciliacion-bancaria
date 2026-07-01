@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import VueApexCharts from "vue3-apexcharts";
-import { trans } from "laravel-vue-i18n";
+import { wTrans } from "laravel-vue-i18n";
 import { formatCurrency } from "@/utils/format";
 import type { IngresoEmpresaMonth, EmpresaPnl } from "../types";
 
@@ -14,6 +14,15 @@ const SIN_ASIGNAR_COLOR = "#94A3B8"; // slate-400
 const FALLBACK = ["#6366F1", "#22C55E", "#F97316", "#0EA5E9", "#EC4899", "#EAB308", "#8B5CF6", "#14B8A6"];
 
 const labels = computed(() => props.ingresoEmpresaSeries.map((m) => m.label));
+
+// Empty-state: sin meses, o todos los totales (por empresa + sin asignar) en 0.
+const hasData = computed(() =>
+    props.ingresoEmpresaSeries.some(
+        (mes) =>
+            Number(mes.sin_asignar) > 0 ||
+            mes.empresas.some((e) => Number(e.total) > 0),
+    ),
+);
 
 // Union de empresas (id → nombre/color) preservando primer color visto.
 const empresasIndex = computed(() => {
@@ -39,7 +48,7 @@ const chartSeries = computed(() => {
     }));
 
     const sinAsignar = {
-        name: trans("Sin asignar"),
+        name: wTrans("Sin asignar").value,
         data: props.ingresoEmpresaSeries.map((mes) => Number(mes.sin_asignar)),
     };
 
@@ -82,6 +91,15 @@ const options = computed(() => ({
                 <div class="text-lg font-bold">{{ formatCurrency(tuChecador.pnl.ingresos.total) }}</div>
             </div>
         </div>
-        <VueApexCharts type="bar" height="320" :options="options" :series="chartSeries" />
+        <VueApexCharts
+            v-if="hasData"
+            type="bar"
+            height="320"
+            :options="options"
+            :series="chartSeries"
+        />
+        <p v-else class="text-sm text-gray-400 py-12 text-center">
+            {{ $t("Sin datos en el periodo") }}
+        </p>
     </div>
 </template>

@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { computed } from "vue";
 import { formatCurrency } from "@/utils/format";
 import type { Nomina } from "../types";
 

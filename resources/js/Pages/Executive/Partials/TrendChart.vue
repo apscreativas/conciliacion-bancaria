@@ -1,16 +1,16 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import VueApexCharts from "vue3-apexcharts";
-import { trans } from "laravel-vue-i18n";
+import { wTrans } from "laravel-vue-i18n";
 import { formatCurrency } from "@/utils/format";
 import { CHART_COLORS, type MonthPoint } from "../types";
 
 const props = defineProps<{ series: MonthPoint[] }>();
 
 const chartSeries = computed(() => [
-    { name: trans("Ingresos"), type: "area", data: props.series.map((m) => m.ingresos_total) },
-    { name: trans("Egresos"), type: "line", data: props.series.map((m) => m.egresos_total) },
-    { name: trans("Utilidad neta"), type: "line", data: props.series.map((m) => m.utilidad_neta) },
+    { name: wTrans("Ingresos").value, type: "area", data: props.series.map((m) => m.ingresos_total) },
+    { name: wTrans("Egresos").value, type: "line", data: props.series.map((m) => m.egresos_total) },
+    { name: wTrans("Utilidad neta").value, type: "line", data: props.series.map((m) => m.utilidad_neta) },
 ]);
 
 const options = computed(() => ({

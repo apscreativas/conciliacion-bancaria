@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import VueApexCharts from "vue3-apexcharts";
-import { trans } from "laravel-vue-i18n";
+import { wTrans } from "laravel-vue-i18n";
 import { formatCurrency } from "@/utils/format";
 import { CHART_COLORS, type Proveedor, type CategoriaEgreso } from "../types";
 
@@ -13,7 +13,7 @@ const props = defineProps<{
 const hasProveedores = computed(() => props.proveedores.length > 0);
 
 const chartSeries = computed(() => [
-    { name: trans("Gasto"), data: props.proveedores.map((p) => Number(p.total)) },
+    { name: wTrans("Gasto").value, data: props.proveedores.map((p) => Number(p.total)) },
 ]);
 
 const options = computed(() => ({

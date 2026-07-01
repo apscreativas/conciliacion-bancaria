@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import VueApexCharts from "vue3-apexcharts";
-import { trans } from "laravel-vue-i18n";
+import { wTrans } from "laravel-vue-i18n";
 import { formatCurrency } from "@/utils/format";
 import { CHART_COLORS, type NaturalezaEgreso } from "../types";
 
@@ -17,7 +17,7 @@ const hasData = computed(() => values.value.some((v) => v > 0));
 
 const options = computed(() => ({
     chart: { type: "donut" as const, height: 300, animations: { enabled: false } },
-    labels: [trans("Fijos"), trans("Variables"), trans("Sin clasificar")],
+    labels: [wTrans("Fijos").value, wTrans("Variables").value, wTrans("Sin clasificar").value],
     colors: [CHART_COLORS.fijo, CHART_COLORS.variable, CHART_COLORS.sinClasificar],
     legend: { position: "bottom" as const },
     dataLabels: { enabled: true, formatter: (val: number) => `${Number(val).toFixed(1)}%` },

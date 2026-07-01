@@ -117,6 +117,29 @@ it('normalizes an invalid months window to the default of 12', function () {
         );
 });
 
+it('clamps an out-of-range anchor month back to a valid month', function () {
+    $owner = User::factory()->create();
+
+    // ?month=13 no debe desbordar el ancla: cae al mes actual (válido 1..12).
+    actingAs($owner)->get(route('executive', ['month' => 13, 'year' => 2026]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('filters.month', now()->month)
+            ->where('filters.year', 2026)
+        );
+});
+
+it('clamps an out-of-range anchor year back to the current year', function () {
+    $owner = User::factory()->create();
+
+    actingAs($owner)->get(route('executive', ['month' => 6, 'year' => 1800]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('filters.month', 6)
+            ->where('filters.year', now()->year)
+        );
+});
+
 it('accepts a 6-month trend window', function () {
     $owner = User::factory()->create();
 

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import VueApexCharts from "vue3-apexcharts";
-import { trans } from "laravel-vue-i18n";
+import { wTrans } from "laravel-vue-i18n";
 import { CHART_COLORS, type MonthPoint } from "../types";
 
 const props = defineProps<{ series: MonthPoint[] }>();
@@ -10,9 +10,9 @@ const props = defineProps<{ series: MonthPoint[] }>();
 const toPct = (v: number): number => Math.round(Number(v) * 1000) / 10;
 
 const chartSeries = computed(() => [
-    { name: trans("Margen bruto"), data: props.series.map((m) => toPct(m.margen_bruto)) },
-    { name: trans("Margen EBITDA"), data: props.series.map((m) => toPct(m.margen_ebitda)) },
-    { name: trans("Margen neto"), data: props.series.map((m) => toPct(m.margen_neto)) },
+    { name: wTrans("Margen bruto").value, data: props.series.map((m) => toPct(m.margen_bruto)) },
+    { name: wTrans("Margen EBITDA").value, data: props.series.map((m) => toPct(m.margen_ebitda)) },
+    { name: wTrans("Margen neto").value, data: props.series.map((m) => toPct(m.margen_neto)) },
 ]);
 
 const options = computed(() => ({

@@ -44,9 +44,10 @@ class ExecutiveController extends Controller
         $empresaId = $this->normalizeEmpresaId($request->input('empresa_id'));
         $months = $this->normalizeMonths($request->input('months'));
 
-        // Ancla mes/año ya resuelta por SetGlobalDateFilters.
-        $month = (int) $request->input('month', now()->month);
-        $year = (int) $request->input('year', now()->year);
+        // Ancla mes/año: SetGlobalDateFilters la resuelve, pero clampamos de nuevo
+        // (defense-in-depth) para que un ?month=13 o ?year fuera de rango no desborde el ancla.
+        $month = $this->normalizeMonth($request->input('month'));
+        $year = $this->normalizeYear($request->input('year'));
 
         $rango = $resolver->resolve($granularidad, $year, $month);
         $prev = $resolver->previous($granularidad, $rango['desde']);
@@ -221,5 +222,21 @@ class ExecutiveController extends Controller
     private function normalizeMonths($value): int
     {
         return in_array((int) $value, self::MESES_VENTANA, true) ? (int) $value : 12;
+    }
+
+    /** Clampa el mes ancla a 1..12; fallback al mes actual si es inválido. */
+    private function normalizeMonth($value): int
+    {
+        $month = is_numeric($value) ? (int) $value : now()->month;
+
+        return ($month >= 1 && $month <= 12) ? $month : now()->month;
+    }
+
+    /** Clampa el año ancla a 2000..2100; fallback al año actual si es inválido. */
+    private function normalizeYear($value): int
+    {
+        $year = is_numeric($value) ? (int) $value : now()->year;
+
+        return ($year >= 2000 && $year <= 2100) ? $year : now()->year;
     }
 }
