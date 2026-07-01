@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Models\Empresa;
 use App\Models\ExportRequest;
+use App\Services\Finance\FinanceAnalyticsService;
 use App\Services\Finance\PeriodResolver;
 use App\Services\Finance\ProfitLossService;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -34,7 +35,7 @@ class GenerateProfitLossPdfJob implements ShouldQueue
         $this->onQueue('exports');
     }
 
-    public function handle(PeriodResolver $resolver, ProfitLossService $pl): void
+    public function handle(PeriodResolver $resolver, ProfitLossService $pl, FinanceAnalyticsService $analytics): void
     {
         $this->exportRequest->update(['status' => 'processing']);
 
@@ -46,6 +47,9 @@ class GenerateProfitLossPdfJob implements ShouldQueue
             $empresaId = $filters['empresa_id'] ?? null;
             $month = (int) ($filters['month'] ?? now()->month);
             $year = (int) ($filters['year'] ?? now()->year);
+            // Ventana de tendencia (6/12), como en el dashboard; default 12.
+            $months = (int) ($filters['months'] ?? 12);
+            $months = in_array($months, [6, 12], true) ? $months : 12;
 
             $rango = $resolver->resolve($granularidad, $year, $month);
             $prev = $resolver->previous($granularidad, $rango['desde']);
@@ -75,6 +79,14 @@ class GenerateProfitLossPdfJob implements ShouldQueue
                 $empresaNombre = $empresa?->nombre ?? 'Empresa';
             }
 
+            // Analítica temporal (Dashboard v2, BLOQUE 3): serie mensual + desgloses del
+            // periodo, en TABLAS (dompdf no renderiza charts JS). team_id EXPLÍCITO.
+            $series = $analytics->monthlySeries($year, $month, $months, $empresaId, $teamId);
+            $egresosPorCategoria = $analytics->egresosPorCategoria($rango['desde'], $rango['hasta'], $empresaId, $teamId);
+            $egresosPorNaturaleza = $analytics->egresosPorNaturaleza($rango['desde'], $rango['hasta'], $empresaId, $teamId);
+            $topProveedores = $analytics->topProveedores($rango['desde'], $rango['hasta'], $empresaId, $teamId);
+            $nominaRollup = $analytics->nominaRollup($rango['desde'], $rango['hasta'], $empresaId, $teamId);
+
             $data = [
                 'pnl' => $pnl,
                 'pnlPrev' => $pnlPrev,
@@ -85,6 +97,13 @@ class GenerateProfitLossPdfJob implements ShouldQueue
                 'desde' => $rango['desde']->toDateString(),
                 'hasta' => $rango['hasta']->toDateString(),
                 'generadoAt' => now(),
+                // Analítica temporal (tablas).
+                'months' => $months,
+                'series' => $series,
+                'egresosPorCategoria' => $egresosPorCategoria,
+                'egresosPorNaturaleza' => $egresosPorNaturaleza,
+                'topProveedores' => $topProveedores,
+                'nominaRollup' => $nominaRollup,
             ];
 
             $uuid = Str::uuid();

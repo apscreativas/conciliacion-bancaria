@@ -309,6 +309,16 @@ No hay factories para `Conciliacion`, `BankFormat`, `Tolerancia`, `TeamInvitatio
 
 Devuelve `startOfDay`/`endOfDay`; el consumidor (`ProfitLossService`) usa `toDateString()`. Consumido por `ExecutiveController` (request) y `GenerateProfitLossPdfJob` (cola). Diseño completo: `docs/sdd/07-executive-dashboard.md`.
 
+### `FinanceAnalyticsService` (Dashboard ejecutivo v2)
+
+`App\Services\Finance\FinanceAnalyticsService` (POPO sin estado, **sin migración** — no crea ni modifica tablas) construye la analítica temporal del dashboard ejecutivo v2 sobre las **mismas fuentes/definiciones del P&L**. Depende de `ProfitLossService` + `PeriodResolver` (inyectados). Como el motor, **todos** los métodos reciben `teamId` explícito y filtran `where('<tabla>.team_id', $teamId)` directamente, sin depender del global scope ambiente de `TeamOwned` (queue-safe: se consume desde `ExecutiveController` **y** desde `GenerateProfitLossPdfJob` en cola). Métodos:
+
+- `monthlySeries($anchorYear, $anchorMonth, $months, ?$empresaId, $teamId): array` — serie de los últimos `$months` meses (6/12) terminando en el ancla, orden cronológico ascendente. Cada mes **reusa `ProfitLossService::forPeriod`** (identidad con el motor garantizada: la suma de la serie == `forPeriod` del rango completo). Devuelve por mes ingresos (total/bancario/manual), egresos y sus tramos (costo_venta/gasto_operativo/abajo_ebitda/sin_clasificar), utilidad bruta/EBITDA/neta y márgenes.
+- `ingresoPorEmpresaMensual($anchorYear, $anchorMonth, $months, $teamId): array` — ingreso mensual desglosado por empresa (serie apilada), con bucket "sin asignar" (empresa null). **No** itera `forPeriod` N×M: usa 2 queries agrupadas que espejan la definición de ingreso del P&L (bancario conciliado por `movimientos.fecha` + manual por `fecha`).
+- Desgloses del periodo (1 query c/u, team+empresa-aware): `egresosPorCategoria(desde, hasta, ?empresaId, teamId)` (categoría null → "Sin categoría"), `egresosPorNaturaleza(...)` (fijo/variable/sin_clasificar), `topProveedores(..., limit=10)` (excluye proveedor null/vacío), `nominaRollup(...)` (egresos con `empleado_id`, por `concepto_nomina` fiscal/complemento/total).
+
+Diseño completo y widgets: `docs/sdd/07-executive-dashboard.md`.
+
 ---
 
 ## Seeders

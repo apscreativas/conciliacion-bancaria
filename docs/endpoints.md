@@ -237,7 +237,7 @@ Resource `cash-income` `->except('show')`. Captura del ingreso real en **efectiv
 
 ## Dashboard ejecutivo (Finanzas Fase 6)
 
-Estado de Resultados nivel CEO/consejo. Consume `ProfitLossService` (con `team_id` explícito) + `PeriodResolver`. **Acceso: solo owner del team** (`ChecksTeamOwnership::ownsCurrentTeam`) en **todos** los métodos — un no-owner recibe **403**. Rutas y Vue page en inglés (`executive`/`Executive/`), dominio en español. El export PDF asíncrono reusa el patrón de `ReconciliationController` (cola `exports`, `ExportRequest`, polling).
+Estado de Resultados nivel CEO/consejo. Consume `ProfitLossService` (con `team_id` explícito) + `PeriodResolver` + **`FinanceAnalyticsService`** (analítica temporal v2). **Acceso: solo owner del team** (`ChecksTeamOwnership::ownsCurrentTeam`) en **todos** los métodos — un no-owner recibe **403**. Rutas y Vue page en inglés (`executive`/`Executive/`), dominio en español. La UI usa **ApexCharts** (`vue3-apexcharts`) para las gráficas. El export PDF asíncrono reusa el patrón de `ReconciliationController` (cola `exports`, `ExportRequest`, polling).
 
 | Método | URI | Controller@action | Nombre | Middleware extra |
 |---|---|---|---|---|
@@ -250,22 +250,26 @@ Estado de Resultados nivel CEO/consejo. Consume `ProfitLossService` (con `team_i
 
 | Endpoint | Page (props) |
 |---|---|
-| `/executive` | `Executive/Index` (props: `pnl`, `pnlPrev`, `pnlYoY`, `porEmpresa`, `tuChecador`, `empresas`, `filters`) |
+| `/executive` | `Executive/Index` (props: `pnl`, `pnlPrev`, `pnlYoY`, `porEmpresa`, `tuChecador`, `empresas`, **`series`**, **`ingresoEmpresaSeries`**, **`egresosPorCategoria`**, **`egresosPorNaturaleza`**, **`topProveedores`**, **`nominaRollup`**, `filters`) |
 
 - `pnl`/`pnlPrev`/`pnlYoY`: `ProfitLossService::forPeriod` del periodo actual, el anterior (misma granularidad) y el mismo periodo del año anterior (YoY) — todos con `empresa_id` + `team_id` explícito.
 - `porEmpresa`: un P&L por cada empresa activa del team (margen por unidad de negocio).
 - `tuChecador`: P&L de la empresa con `slug='tu-checador'` si existe (tarjeta de ingreso recurrente); `null` si no existe (degrada con gracia).
-- `filters`: `granularidad` (`mensual`|`trimestral`|`semestral`|`anual`, default `mensual`), `empresa_id` (null=consolidado), `month`, `year` (ancla de `SetGlobalDateFilters`).
+- **`series`** (v2): serie mensual (`FinanceAnalyticsService::monthlySeries`) de los últimos `months` meses terminando en el ancla, respetando el filtro de empresa. Alimenta tendencias, sparklines de KPIs, márgenes en el tiempo y composición apilada de egresos.
+- **`ingresoEmpresaSeries`** (v2): ingreso mensual por empresa (`ingresoPorEmpresaMensual`), **siempre consolidado multi-empresa** (ignora el filtro de empresa por diseño), con bucket "sin asignar".
+- **`egresosPorCategoria`** / **`egresosPorNaturaleza`** / **`topProveedores`** / **`nominaRollup`** (v2): desgloses del rango seleccionado (respetan `empresa_id`).
+- `filters`: `granularidad` (`mensual`|`trimestral`|`semestral`|`anual`, default `mensual`), `empresa_id` (null=consolidado), `month`, `year` (ancla de `SetGlobalDateFilters`), **`months`** (`6`|`12`, default `12`).
 
 ### Filtros / parámetros (query)
 
 - `granularidad` — granularidad del periodo (`PeriodResolver`); valor no reconocido → `mensual`.
 - `empresa_id` — int positivo o vacío (consolidado, incluye "sin asignar").
+- **`months`** (v2) — ventana de tendencia en meses; **solo `6` o `12`**, cualquier otro valor → `12` (default).
 - `month`/`year` — ancla; ya inyectados por `SetGlobalDateFilters`, default `now()`.
 
 ### Flujo de export PDF
 
-1. `GET /executive/export?granularidad&empresa_id&month&year` → valida, crea `ExportRequest` (`type='pl_pdf'`, status `queued`, `filters` incluyen `team_id`), dispatcha `GenerateProfitLossPdfJob` (cola `exports`), responde JSON `{id, status:'queued', message}` si `wantsJson()`.
+1. `GET /executive/export?granularidad&empresa_id&month&year&months` → valida (incl. `months` in:6,12), crea `ExportRequest` (`type='pl_pdf'`, status `queued`, `filters` incluyen `team_id` y `months`), dispatcha `GenerateProfitLossPdfJob` (cola `exports`), responde JSON `{id, status:'queued', message}` si `wantsJson()`. El PDF incluye la serie mensual + desgloses en **tablas** (dompdf no hace charts).
 2. Polling `GET /executive/export/{id}/status` → `{status, error_message, is_offline}` (`is_offline=true` si `queued > 2min`).
 3. Al completar: `GET /executive/export/{id}/download` → `Storage::download(...)`.
 

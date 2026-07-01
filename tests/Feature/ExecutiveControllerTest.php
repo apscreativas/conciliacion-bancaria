@@ -93,9 +93,61 @@ it('renders the executive dashboard for the owner with matching P&L figures', fu
             ->has('pnlYoY')
             ->has('porEmpresa', 1)
             ->has('empresas', 1)
+            // Analítica temporal (Dashboard v2, BLOQUE 2).
+            ->has('series')
+            ->has('ingresoEmpresaSeries')
+            ->has('egresosPorCategoria')
+            ->has('egresosPorNaturaleza')
+            ->has('topProveedores')
+            ->has('nominaRollup')
+            ->where('filters.months', 12)
             // Inertia serializa floats enteros como int en JSON → comparar con int.
             ->where('pnl.ingresos.total', 7000)
             ->where('pnl.utilidad_neta', 6000)
+        );
+});
+
+it('normalizes an invalid months window to the default of 12', function () {
+    $owner = User::factory()->create();
+
+    actingAs($owner)->get(route('executive', ['month' => 6, 'year' => 2026, 'months' => 99]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('filters.months', 12)
+        );
+});
+
+it('clamps an out-of-range anchor month back to a valid month', function () {
+    $owner = User::factory()->create();
+
+    // ?month=13 no debe desbordar el ancla: cae al mes actual (válido 1..12).
+    actingAs($owner)->get(route('executive', ['month' => 13, 'year' => 2026]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('filters.month', now()->month)
+            ->where('filters.year', 2026)
+        );
+});
+
+it('clamps an out-of-range anchor year back to the current year', function () {
+    $owner = User::factory()->create();
+
+    actingAs($owner)->get(route('executive', ['month' => 6, 'year' => 1800]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('filters.month', 6)
+            ->where('filters.year', now()->year)
+        );
+});
+
+it('accepts a 6-month trend window', function () {
+    $owner = User::factory()->create();
+
+    actingAs($owner)->get(route('executive', ['month' => 6, 'year' => 2026, 'months' => 6]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('filters.months', 6)
+            ->has('series', 6)
         );
 });
 
@@ -202,6 +254,7 @@ it('generates the PDF and marks the export completed (job)', function () {
     (new GenerateProfitLossPdfJob($export))->handle(
         app(\App\Services\Finance\PeriodResolver::class),
         app(\App\Services\Finance\ProfitLossService::class),
+        app(\App\Services\Finance\FinanceAnalyticsService::class),
     );
 
     $export->refresh();

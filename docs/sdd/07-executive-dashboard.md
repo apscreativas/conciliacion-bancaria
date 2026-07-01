@@ -99,3 +99,45 @@ Aplica el DoD §8 del PRD (A pruebas → B docs → C commit/reviews → D gate 
 - **D** ✓ gate financiero: dashboard y PDF cuadran con `ProfitLossService`; sin doble conteo; sin mezcla de teams; motor de conciliación intacto.
 
 **Estado: implementado** (`feature/finanzas-fase6`).
+
+---
+
+# v2 — Analítica temporal
+
+> Ampliación del dashboard ejecutivo · Rama: `feature/dashboard-analytics` · Autor: Juan + Claude · Fecha: 2026-07-01 · **Estado: implementado**
+
+## v2.1 Objetivo
+El dashboard v1 es una **foto de un solo periodo** (KPIs + waterfall + margen por empresa): al elegir un rango >1 mes solo **suma**, sin mostrar el **comportamiento en el tiempo** ni desgloses finos, pese a que la data lo permite (egresos por categoría/grupo/naturaleza/proveedor, nómina, ingresos bancario/efectivo y por empresa, todo mensual). v2 lo convierte en un **dashboard analítico** con tendencias, composición y desgloses, **manteniendo** la foto (waterfall) actual. **No** cambia el cálculo/identidad del P&L: solo lo consume mes a mes.
+
+## v2.2 Alcance
+- **Backend:** `App\Services\Finance\FinanceAnalyticsService` (POPO sin estado, **sin migración**), inyecta `ProfitLossService` + `PeriodResolver`. Métodos con `teamId` **explícito** (queue-safe): `monthlySeries` (reusa `forPeriod` por mes → identidad garantizada), `ingresoPorEmpresaMensual` (2 queries agrupadas, bucket "sin asignar"), `egresosPorCategoria`, `egresosPorNaturaleza`, `topProveedores`, `nominaRollup`. Ver `docs/domain.md`.
+- **`ExecutiveController@index`:** nuevo param `months` (validado `in:6,12`, default 12); pasa `series`, `ingresoEmpresaSeries` (siempre consolidado multi-empresa), `egresosPorCategoria`, `egresosPorNaturaleza`, `topProveedores`, `nominaRollup`; añade `months` a `filters`. `export` propaga `months` al `ExportRequest`.
+- **Frontend:** rediseño de `Executive/Index.vue` con widgets **A–I** extraídos a `Executive/Partials/` usando **ApexCharts** (`vue3-apexcharts`, import local por Partial):
+  - **A. KpiCard** — número + margen % + sparkline + Δ vs anterior/YoY.
+  - **B. TrendChart** — Ingresos vs Egresos vs Utilidad neta por mes.
+  - **C. MarginTrendChart** — márgenes bruto/EBITDA/neto por mes.
+  - **D. EgresosComposition** — barras apiladas por mes (COGS/OPEX/abajo/sin_clasificar) + dona por categoría del periodo.
+  - **E. IngresoEmpresaChart** — apilado por empresa (color de empresa) + Tu Checador resaltado.
+  - **F. FijoVariableChart** — fijo vs variable (dona/barras).
+  - **G. TopProveedores** — ranking + top categorías.
+  - **H. NominaRollup** — costo de nómina fiscal/complemento/total.
+  - **I. PnlWaterfall** — el waterfall v1 extraído como Partial (se mantiene).
+  - **Selector 6/12 meses** en el header (junto a granularidad + empresa), `router.get` con `preserveState`.
+- **PDF:** dompdf **no** renderiza charts JS → el `GenerateProfitLossPdfJob` calcula serie mensual + desgloses con `FinanceAnalyticsService` (`months` del `ExportRequest`, `team_id` explícito) y la Blade los añade en **tablas** tras la tabla P&L (A4, estilo actual).
+
+## v2.3 Decisiones
+- **Librería de charts (ApexCharts):** v1 evitó dependencias (CSS/divs). v2 necesita líneas/áreas/apiladas/donas/sparklines multi-serie temporales → hacerlas a mano sería frágil y caro. Se adopta **ApexCharts** (SVG, no choca con el caveat Tailwind v3/v4 de `docs/decisions/0005`). Costo: bundle grande (`apexcharts`/`vue3-apexcharts` ~500–600 kB min c/u). **Mitigación futura (fuera de alcance):** code-split / lazy-load del bundle de charts (dynamic `import()`), hoy import local por Partial.
+- **Ventana 6/12 (no rango libre):** simplicidad de UI y de perf; termina en el ancla mes/año del sidebar.
+- **`ingresoEmpresaSeries` ignora el filtro de empresa** por diseño (siempre muestra el split consolidado).
+- **Perf:** `monthlySeries` cuesta ~4 queries × meses (≤48 con 12 meses). Para la escala v1 (<pocas empresas) está bien; si crece → caché/batch (fuera de alcance).
+
+## v2.4 Impacto / no-goals
+- **Sin migración**, sin cambio de esquema. **No** toca `ProfitLossService::forPeriod` (solo lo consume). Motor de conciliación intacto. Tenancy reforzada (`team_id` explícito en todos los métodos del servicio). Charts **solo** en UI; el PDF usa tablas.
+
+## v2.5 Pruebas / DoD
+- `FinanceAnalyticsServiceTest` (al centavo: series/márgenes, split por empresa+mes con "sin asignar", desgloses, tenancy, e invariante suma(serie)==`forPeriod` del rango).
+- `ExecutiveControllerTest` extendido (props analíticas presentes, validación `months`, solo-owner 403).
+- `GenerateProfitLossPdfJobTest` (dispatchSync → `completed` + PDF, con y sin datos; la Blade con tablas no truena por variable indefinida).
+- Suite completa = baseline **13 fallos** preexistentes, **0 regresiones nuevas**; `npm run build` verde con ApexCharts; smoke server-side del PDF OK.
+
+**Estado: implementado** (`feature/dashboard-analytics`).
