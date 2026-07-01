@@ -9,6 +9,8 @@
 
 App Laravel 12 + Inertia v2 + Vue 3 (TS) multi-tenant (por `Team`) para conciliación de CFDI (XML) contra estados de cuenta bancarios, con colas Redis (`imports`, `exports`) y exportación asíncrona Excel/PDF.
 
+Además incluye **Finanzas 360** — control financiero multi-empresa construido **sobre** la conciliación: empresas/categorías (Estado de Resultados), egresos manuales y recurrentes, empleados + nómina quincenal, ingresos manuales (efectivo), motor de P&L (`ProfitLossService`), dashboard ejecutivo con analítica + export PDF, y catálogo cliente→empresa con auto-asignación de ingresos al conciliar. Docs por módulo en `docs/sdd/00..08-*.md`.
+
 ---
 
 ## 1. Reglas obligatorias (NO negociables)
@@ -28,13 +30,14 @@ App Laravel 12 + Inertia v2 + Vue 3 (TS) multi-tenant (por `Team`) para concilia
 
 ### 1.3 Tenancy — la regla que más se viola
 
-- Todos los modelos de dominio (`Factura`, `Movimiento`, `Conciliacion`, `Archivo`, `BankFormat`, `ExportRequest`, `Tolerancia`) usan el trait `App\Models\Traits\TeamOwned` que aplica un **global scope automático** que filtra por `team_id = Auth::user()->current_team_id`.
+- Todos los modelos de dominio (`Factura`, `Movimiento`, `Conciliacion`, `Archivo`, `BankFormat`, `ExportRequest`, `Tolerancia` y los de Finanzas 360: `Empresa`, `Categoria`, `Egreso`, `EgresoRecurrente`, `Empleado`, `IngresoManual`, `ClienteEmpresa`) usan el trait `App\Models\Traits\TeamOwned` que aplica un **global scope automático** que filtra por `team_id = Auth::user()->current_team_id`.
 - Esto significa:
     - Cualquier `Factura::find($id)` ya está filtrado al `current_team_id` del usuario.
     - `::withoutGlobalScopes()` solo se usa en comandos artisan, migraciones, seeders o tests (nunca en código de request).
     - Al crear registros bajo contexto de usuario, `team_id` se setea automáticamente.
 - **Defense in depth**: aun con el scope, los controllers hacen `where('team_id', auth()->user()->current_team_id)` de nuevo — no quitar esta duplicación aunque "parezca redundante".
 - Modelo excepción: `Banco` **NO** usa `TeamOwned` (datos de referencia globales).
+- **Queue-safe (Finanzas):** los servicios/comandos financieros que corren **en cola o comando** (sin `Auth`) tienen el global scope **apagado** → **deben** recibir `team_id` explícito para no mezclar teams. Ejemplos: `ProfitLossService::forPeriod(..., ?int $teamId)`, `FinanceAnalyticsService`, `GenerateProfitLossPdfJob`, y los comandos `egresos:generar-recurrentes` / `nomina:generar` (que recorren teams con `withoutGlobalScopes()`). Ver `docs/security.md` y `docs/sdd/07-executive-dashboard.md`.
 
 ### 1.4 No tocar sin entender
 
@@ -42,7 +45,9 @@ App Laravel 12 + Inertia v2 + Vue 3 (TS) multi-tenant (por `Team`) para concilia
 
 | Archivo | Por qué es frágil |
 |---|---|
-| `app/Services/Reconciliation/MatcherService.php` | Transacción con `lockForUpdate`, algoritmo de `remainingAmount` con epsilon `0.001`. Un bug aquí = corrupción financiera |
+| `app/Services/Reconciliation/MatcherService.php` | Transacción con `lockForUpdate`, algoritmo de `remainingAmount` con epsilon `0.001`. Un bug aquí = corrupción financiera. Nota: `reconcile()` ahora **devuelve el `group_id`** (UUID) del grupo creado — cambio **aditivo**; el controller lo usa para auto-asignar empresa post-reconcile vía catálogo cliente→empresa. **No** cambia el algoritmo de matching |
+| `app/Services/Finance/ProfitLossService.php` | Motor del Estado de Resultados. Identidad maestra `utilidad_neta = ingresos − egresos`. **Anti-doble-conteo (clave):** NUNCA sumar `movimientos.tipo='cargo'`, `movimientos.monto` ni `facturas.monto`; egresos salen **solo** de `egresos`, el ingreso bancario es **exclusivamente** `conciliacions.monto_aplicado`. Márgenes como ratio. Corre en cola → requiere `team_id` explícito (§1.3) |
+| `app/Console/Commands/GenerarEgresosRecurrentes.php` y `GenerarNomina.php` | Generadores de dinero **idempotentes**: idempotencia respaldada en DB por índice único (`egresos_recurrente_periodo_unique`, `egresos_empleado_periodo_unique`) + `exists()` (ruta normal) + `try/catch` de `QueryException` (código MySQL 1062) para carreras manual-vs-cron; con catch-up y ventana móvil. Un bug aquí duplica o se salta egresos reales |
 | `app/Http/Controllers/FileUploadController.php` | Validación híbrida sync/async, sanitización MIME, dedupe UUID/checksum, validación RFC flexible, rechazo PPD |
 | `app/Jobs/ProcessXmlUpload.php` y `ProcessBankStatement.php` | Transiciones de estado `archivo.estatus` → `pendiente`/`procesando`/`procesado`/`fallido`/`duplicado`/`rechazado` |
 | `app/Services/Parsers/DynamicStatementParser.php` | Parseo de múltiples formatos de fecha, CSV injection sanitization, `amount_column` vs `debit/credit` |
@@ -82,6 +87,8 @@ Si el cambio es una corrección pequeña (<20 líneas, 1 archivo, no toca tenanc
 - Todos los jobs existentes tienen `tries=3` y `backoff=[30,120,300]`. Los nuevos deben seguir este patrón.
 - En producción los workers son procesos Docker (`queue-imports`, `queue-exports`) o Supervisor (ver `README.md`).
 - Si un job toca `Archivo` o `ExportRequest`, **debe** manejar el estado `fallido`/`failed` en `failed()`.
+- Export PDF del P&L: `GenerateProfitLossPdfJob` usa la cola `exports` (mismo patrón `tries=3`/`backoff`, `failed()` marca el `ExportRequest` como `failed`).
+- **Schedules diarios** (`routes/console.php`, Laravel 12 no usa `Console/Kernel`): `egresos:generar-recurrentes` a las **01:00** y `nomina:generar` a las **01:30**, ambos `->withoutOverlapping()->onOneServer()`. En prod requieren la entrada de cron `* * * * * php artisan schedule:run` (ver `README.md`); en local (Herd) usar `php artisan schedule:work` o correr el comando a mano. Son idempotentes: correr de más es inocuo.
 
 ### 3.3 Controllers
 
@@ -103,6 +110,12 @@ Si el cambio es una corrección pequeña (<20 líneas, 1 archivo, no toca tenanc
 - Extracción de RFC/UUID desde texto → usar `DescriptionParser`.
 - Parseo de CFDI → usar `CfdiParserService`.
 - Export de conciliación → extender `ReconciliationExport`/`ReconciliationPdfExport`, no duplicar queries.
+- Finanzas (servicios en `app/Services/Finance/`), no reimplementar:
+    - Cálculo de fechas de recurrencia / ajuste a día hábil → `RecurrenceCalculator`.
+    - Fechas y montos de nómina quincenal → `PayrollCalculator` (reusa `RecurrenceCalculator::applyDiaHabil`).
+    - Rangos de periodo (actual / anterior / YoY) → `PeriodResolver`.
+    - Cálculo del Estado de Resultados → `ProfitLossService`; serie mensual y desgloses del dashboard → `FinanceAnalyticsService`.
+    - Catálogo cliente→empresa y auto-asignación de ingresos → `ClienteEmpresaService`.
 
 ---
 
@@ -125,6 +138,8 @@ Todo cambio que toque funcionalidad, reglas de conciliación, imports/parsers, m
 | Command artisan nuevo | `docs/operations.md` |
 | Validaciones, rate limits, autorizaciones | `docs/security.md` |
 | Decisión arquitectónica no obvia | Nuevo `docs/decisions/NNNN-titulo.md` |
+| Módulos de Finanzas 360 (empresas/categorías, egresos, empleados/nómina, ingresos, P&L, dashboard, catálogo) | El SDD correspondiente en `docs/sdd/00..08-*.md` |
+| Reglas de P&L / nómina / catálogo cliente→empresa | `docs/business-rules.md` (+ el SDD del módulo) |
 
 ### 4.3 Al detectar inconsistencia
 
