@@ -70,7 +70,7 @@ it('recordar crea el mapeo por rfc con nombre, empresa, user, fecha y veces=1', 
         ->and($row->ultima_asignacion_at)->not->toBeNull();
 });
 
-it('recordar es last-wins por rfc e incrementa veces en cada asignación', function () {
+it('recordar es last-wins por rfc e incrementa veces solo al cambiar de empresa', function () {
     $user = User::factory()->create();
     $team = $user->currentTeam;
     $empresaA = Empresa::factory()->create(['team_id' => $team->id]);
@@ -83,7 +83,22 @@ it('recordar es last-wins por rfc e incrementa veces en cada asignación', funct
     $row = ClienteEmpresa::withoutGlobalScopes()->where('team_id', $team->id)->where('rfc', 'AAA010101AAA')->first();
     expect($row->empresa_id)->toBe($empresaB->id) // last-wins
         ->and($row->nombre)->toBe('Nombre Nuevo')
-        ->and($row->veces)->toBe(2);
+        ->and($row->veces)->toBe(2); // nueva (1) + cambio A→B (2)
+});
+
+it('recordar NO incrementa veces al re-asignar la MISMA empresa (solo refresca nombre/fecha)', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $empresa = Empresa::factory()->create(['team_id' => $team->id]);
+    $svc = new ClienteEmpresaService;
+
+    $svc->recordar($team->id, $user->id, [['rfc' => 'AAA010101AAA', 'nombre' => 'Nombre Viejo']], $empresa->id);
+    $svc->recordar($team->id, $user->id, [['rfc' => 'AAA010101AAA', 'nombre' => 'Nombre Nuevo']], $empresa->id);
+
+    $row = ClienteEmpresa::withoutGlobalScopes()->where('team_id', $team->id)->where('rfc', 'AAA010101AAA')->first();
+    expect($row->empresa_id)->toBe($empresa->id)
+        ->and($row->nombre)->toBe('Nombre Nuevo') // se refresca el nombre
+        ->and($row->veces)->toBe(1); // misma empresa → NO incrementa
 });
 
 it('recordar deduplica rfc dentro del mismo lote (una sola fila, veces=1)', function () {
@@ -158,14 +173,22 @@ it('sugerirEmpresa devuelve null cuando ningún rfc está en el catálogo', func
     expect((new ClienteEmpresaService)->sugerirEmpresa($team->id, ['ZZZ999999ZZZ']))->toBeNull();
 });
 
-it('sugerirEmpresa ignora rfc sin mapeo si el resto es unívoco', function () {
+it('sugerirEmpresa es estricto: multi-rfc con uno sin mapeo → null', function () {
     $user = User::factory()->create();
     $team = $user->currentTeam;
     $empresa = Empresa::factory()->create(['team_id' => $team->id]);
     (new ClienteEmpresaService)->recordar($team->id, $user->id, [['rfc' => 'AAA010101AAA', 'nombre' => 'C']], $empresa->id);
 
-    // AAA mapea; ZZZ no. El único mapeo existente es unívoco → devuelve esa empresa.
-    expect((new ClienteEmpresaService)->sugerirEmpresa($team->id, ['AAA010101AAA', 'ZZZ999999ZZZ']))->toBe($empresa->id);
+    // AAA mapea; ZZZ no. Al haber un RFC sin mapeo, NO se sugiere empresa (estricto):
+    // estampar la empresa de AAA a todo el grupo mal-etiquetaría el ingreso de ZZZ.
+    expect((new ClienteEmpresaService)->sugerirEmpresa($team->id, ['AAA010101AAA', 'ZZZ999999ZZZ']))->toBeNull();
+});
+
+it('sugerirEmpresa mono-rfc sin mapeo → null', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+
+    expect((new ClienteEmpresaService)->sugerirEmpresa($team->id, ['ZZZ999999ZZZ']))->toBeNull();
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

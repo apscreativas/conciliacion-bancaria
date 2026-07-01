@@ -16,8 +16,9 @@ class ClienteEmpresaService
 {
     /**
      * Aprende (upsert) el mapeo rfc → empresa por cada RFC único de $facturas.
-     * last-wins: la última asignación gana empresa/nombre/user/fecha. `veces` se
-     * incrementa +1 por cada asignación (para medir confianza del aprendizaje).
+     * last-wins: la última asignación gana empresa/nombre/user/fecha. `veces` solo
+     * se incrementa cuando el mapeo es nuevo o cambia de empresa (mide confianza del
+     * aprendizaje); re-asignar la MISMA empresa solo refresca nombre/fecha.
      *
      * @param  array  $facturas  lista de arrays `['rfc'=>..,'nombre'=>..]` o modelos Factura
      */
@@ -37,25 +38,43 @@ class ClienteEmpresaService
         }
 
         foreach ($unicos as $rfc => $nombre) {
+            $cliente = ClienteEmpresa::withoutGlobalScopes()
+                ->where('team_id', $teamId)
+                ->where('rfc', $rfc)
+                ->first();
+
+            // Solo cuenta como "asignación" (incrementa veces) cuando el mapeo es
+            // nuevo o cambia de empresa. Re-asignar la MISMA empresa solo refresca
+            // nombre/fecha, sin inflar el contador de confianza.
+            $esCambio = $cliente === null || (int) $cliente->empresa_id !== $empresaId;
+
+            $atributos = [
+                'empresa_id' => $empresaId,
+                'nombre' => $nombre,
+                'user_id' => $userId,
+                'ultima_asignacion_at' => now(),
+            ];
+
             $cliente = ClienteEmpresa::withoutGlobalScopes()->updateOrCreate(
                 ['team_id' => $teamId, 'rfc' => $rfc],
-                [
-                    'empresa_id' => $empresaId,
-                    'nombre' => $nombre,
-                    'user_id' => $userId,
-                    'ultima_asignacion_at' => now(),
-                ]
+                $atributos
             );
 
-            $cliente->increment('veces');
+            if ($esCambio) {
+                $cliente->increment('veces');
+            }
         }
     }
 
     /**
-     * Sugiere una empresa para un conjunto de RFC.
-     * Devuelve el empresa_id si TODOS los RFC que existen en el catálogo mapean a
-     * la MISMA empresa y hay al menos uno mapeado. Si los mapeos difieren
-     * (ambiguo) o ninguno mapea → null. Los RFC sin mapeo se ignoran.
+     * Sugiere una empresa para un conjunto de RFC (regla ESTRICTA).
+     * Devuelve el empresa_id SOLO si TODOS los RFC dados están mapeados en el
+     * catálogo Y coinciden en la misma empresa. Si algún RFC no tiene mapeo, si hay
+     * empresas distintas (ambiguo), o si la lista viene vacía → null.
+     *
+     * Ser estricto evita mal-etiquetar grupos multi-RFC: si el grupo mezcla un RFC
+     * conocido con uno desconocido, no se estampa la empresa del conocido a todo el
+     * grupo.
      */
     public function sugerirEmpresa(int $teamId, array $rfcs): ?int
     {
@@ -65,20 +84,49 @@ class ClienteEmpresaService
             return null;
         }
 
-        $empresaIds = ClienteEmpresa::withoutGlobalScopes()
+        $mapa = ClienteEmpresa::withoutGlobalScopes()
             ->where('team_id', $teamId)
             ->whereIn('rfc', $rfcs)
             ->whereNotNull('empresa_id')
-            ->pluck('empresa_id')
-            ->unique()
-            ->values();
+            ->pluck('empresa_id', 'rfc')
+            ->all();
 
-        if ($empresaIds->count() === 1) {
-            return (int) $empresaIds->first();
+        return $this->resolverUnivoco($rfcs, $mapa);
+    }
+
+    /**
+     * Regla estricta compartida: dado un conjunto de RFC y un mapa `rfc => empresa_id`,
+     * devuelve la empresa SOLO si todos los RFC están mapeados y a la misma empresa.
+     * Cualquier RFC sin entrada en el mapa, empresas distintas, o lista vacía → null.
+     *
+     * @param  array<int, string>  $rfcs
+     * @param  array<string, int|string>  $mapa
+     */
+    private function resolverUnivoco(array $rfcs, array $mapa): ?int
+    {
+        $rfcs = array_values(array_unique(array_filter($rfcs)));
+
+        if (empty($rfcs)) {
+            return null;
         }
 
-        // 0 mapeos (ninguno conocido) o >1 (ambiguo) → sin sugerencia.
-        return null;
+        $empresaId = null;
+        foreach ($rfcs as $rfc) {
+            // Algún RFC del grupo no está mapeado → no se puede etiquetar el grupo.
+            if (! array_key_exists($rfc, $mapa) || $mapa[$rfc] === null) {
+                return null;
+            }
+
+            $actual = (int) $mapa[$rfc];
+            if ($empresaId === null) {
+                $empresaId = $actual;
+            } elseif ($empresaId !== $actual) {
+                // Empresas distintas → ambiguo.
+                return null;
+            }
+        }
+
+        return $empresaId;
     }
 
     /**
@@ -110,28 +158,57 @@ class ClienteEmpresaService
      */
     public function aplicarASinEmpresa(int $teamId): int
     {
-        $groupIds = Conciliacion::withoutGlobalScopes()
+        // 1 query: todas las conciliaciones sin empresa del team + su factura (rfc).
+        $sinEmpresa = Conciliacion::withoutGlobalScopes()
             ->where('team_id', $teamId)
             ->whereNull('empresa_id')
-            ->distinct()
-            ->pluck('group_id');
+            ->with('factura:id,rfc')
+            ->get();
 
-        $asignados = 0;
+        if ($sinEmpresa->isEmpty()) {
+            return 0;
+        }
 
-        foreach ($groupIds as $groupId) {
-            $rfcs = collect($this->rfcsDeGrupo($groupId, $teamId))->pluck('rfc')->all();
-            $sugerida = $this->sugerirEmpresa($teamId, $rfcs);
+        // Agrupa en memoria por group_id → RFCs únicos del grupo.
+        $rfcsPorGrupo = $sinEmpresa
+            ->groupBy('group_id')
+            ->map(fn ($grupo) => $grupo
+                ->map(fn ($c) => $c->factura?->rfc)
+                ->filter()
+                ->unique()
+                ->values()
+                ->all()
+            );
 
-            if ($sugerida === null) {
+        // 1 query: catálogo del team como mapa rfc => empresa_id.
+        $mapa = ClienteEmpresa::withoutGlobalScopes()
+            ->where('team_id', $teamId)
+            ->whereNotNull('empresa_id')
+            ->pluck('empresa_id', 'rfc')
+            ->all();
+
+        // En memoria: resuelve cada grupo con la MISMA regla estricta y agrupa los
+        // group_id por la empresa resultante (solo unívocos; ambiguos/desconocidos se saltan).
+        $gruposPorEmpresa = [];
+        foreach ($rfcsPorGrupo as $groupId => $rfcs) {
+            $empresaId = $this->resolverUnivoco($rfcs, $mapa);
+
+            if ($empresaId === null) {
                 continue;
             }
 
-            Conciliacion::withoutGlobalScopes()
-                ->where('group_id', $groupId)
-                ->where('team_id', $teamId)
-                ->update(['empresa_id' => $sugerida]);
+            $gruposPorEmpresa[$empresaId][] = $groupId;
+        }
 
-            $asignados++;
+        // Un update por empresa (no per-grupo), acotado por team.
+        $asignados = 0;
+        foreach ($gruposPorEmpresa as $empresaId => $groupIds) {
+            Conciliacion::withoutGlobalScopes()
+                ->where('team_id', $teamId)
+                ->whereIn('group_id', $groupIds)
+                ->update(['empresa_id' => $empresaId]);
+
+            $asignados += count($groupIds);
         }
 
         return $asignados;
