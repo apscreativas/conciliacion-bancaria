@@ -7,6 +7,7 @@ use App\Jobs\GenerateProfitLossPdfJob;
 use App\Models\Empresa;
 use App\Models\ExportRequest;
 use App\Policies\Concerns\ChecksTeamOwnership;
+use App\Services\Finance\FinanceAnalyticsService;
 use App\Services\Finance\PeriodResolver;
 use App\Services\Finance\ProfitLossService;
 use Illuminate\Http\Request;
@@ -30,7 +31,10 @@ class ExecutiveController extends Controller
     /** Granularidades soportadas por el resolver de periodos. */
     private const GRANULARIDADES = ['mensual', 'trimestral', 'semestral', 'anual'];
 
-    public function index(Request $request, PeriodResolver $resolver, ProfitLossService $pl): Response
+    /** Ventanas de tendencia soportadas (meses); default 12. */
+    private const MESES_VENTANA = [6, 12];
+
+    public function index(Request $request, PeriodResolver $resolver, ProfitLossService $pl, FinanceAnalyticsService $analytics): Response
     {
         abort_unless($this->ownsCurrentTeam($request->user()), 403);
 
@@ -38,10 +42,12 @@ class ExecutiveController extends Controller
 
         $granularidad = $this->normalizeGranularidad($request->input('granularidad'));
         $empresaId = $this->normalizeEmpresaId($request->input('empresa_id'));
+        $months = $this->normalizeMonths($request->input('months'));
 
-        // Ancla mes/año ya resuelta por SetGlobalDateFilters.
-        $month = (int) $request->input('month', now()->month);
-        $year = (int) $request->input('year', now()->year);
+        // Ancla mes/año: SetGlobalDateFilters la resuelve, pero clampamos de nuevo
+        // (defense-in-depth) para que un ?month=13 o ?year fuera de rango no desborde el ancla.
+        $month = $this->normalizeMonth($request->input('month'));
+        $year = $this->normalizeYear($request->input('year'));
 
         $rango = $resolver->resolve($granularidad, $year, $month);
         $prev = $resolver->previous($granularidad, $rango['desde']);
@@ -50,6 +56,15 @@ class ExecutiveController extends Controller
         $pnl = $pl->forPeriod($rango['desde'], $rango['hasta'], $empresaId, $teamId);
         $pnlPrev = $pl->forPeriod($prev['desde'], $prev['hasta'], $empresaId, $teamId);
         $pnlYoY = $pl->forPeriod($yoy['desde'], $yoy['hasta'], $empresaId, $teamId);
+
+        // Analítica temporal (Dashboard v2, BLOQUE 2): series mensuales + desgloses del rango.
+        $series = $analytics->monthlySeries($year, $month, $months, $empresaId, $teamId);
+        // Ingreso por empresa: SIEMPRE consolidado multi-empresa (ignora el filtro de empresa por diseño).
+        $ingresoEmpresaSeries = $analytics->ingresoPorEmpresaMensual($year, $month, $months, $teamId);
+        $egresosPorCategoria = $analytics->egresosPorCategoria($rango['desde'], $rango['hasta'], $empresaId, $teamId);
+        $egresosPorNaturaleza = $analytics->egresosPorNaturaleza($rango['desde'], $rango['hasta'], $empresaId, $teamId);
+        $topProveedores = $analytics->topProveedores($rango['desde'], $rango['hasta'], $empresaId, $teamId);
+        $nominaRollup = $analytics->nominaRollup($rango['desde'], $rango['hasta'], $empresaId, $teamId);
 
         $empresas = $this->empresasActivas($teamId);
 
@@ -80,11 +95,18 @@ class ExecutiveController extends Controller
             'porEmpresa' => $porEmpresa,
             'tuChecador' => $tuChecador,
             'empresas' => $empresas,
+            'series' => $series,
+            'ingresoEmpresaSeries' => $ingresoEmpresaSeries,
+            'egresosPorCategoria' => $egresosPorCategoria,
+            'egresosPorNaturaleza' => $egresosPorNaturaleza,
+            'topProveedores' => $topProveedores,
+            'nominaRollup' => $nominaRollup,
             'filters' => [
                 'granularidad' => $granularidad,
                 'empresa_id' => $empresaId,
                 'month' => $month,
                 'year' => $year,
+                'months' => $months,
             ],
         ]);
     }
@@ -98,6 +120,7 @@ class ExecutiveController extends Controller
             'empresa_id' => 'nullable|integer',
             'month' => 'nullable|integer|min:1|max:12',
             'year' => 'nullable|integer|min:2000|max:2100',
+            'months' => 'nullable|integer|in:6,12',
         ]);
 
         $teamId = $request->user()->current_team_id;
@@ -105,6 +128,7 @@ class ExecutiveController extends Controller
 
         $granularidad = $this->normalizeGranularidad($request->input('granularidad'));
         $empresaId = $this->normalizeEmpresaId($request->input('empresa_id'));
+        $months = $this->normalizeMonths($request->input('months'));
         $month = (int) $request->input('month', now()->month);
         $year = (int) $request->input('year', now()->year);
 
@@ -118,6 +142,7 @@ class ExecutiveController extends Controller
                 'empresa_id' => $empresaId,
                 'month' => $month,
                 'year' => $year,
+                'months' => $months,
                 'team_id' => $teamId,
             ],
         ]);
@@ -191,5 +216,27 @@ class ExecutiveController extends Controller
     private function normalizeEmpresaId($value): ?int
     {
         return is_numeric($value) && (int) $value > 0 ? (int) $value : null;
+    }
+
+    /** Normaliza la ventana de tendencia a 6 o 12 meses (default 12). */
+    private function normalizeMonths($value): int
+    {
+        return in_array((int) $value, self::MESES_VENTANA, true) ? (int) $value : 12;
+    }
+
+    /** Clampa el mes ancla a 1..12; fallback al mes actual si es inválido. */
+    private function normalizeMonth($value): int
+    {
+        $month = is_numeric($value) ? (int) $value : now()->month;
+
+        return ($month >= 1 && $month <= 12) ? $month : now()->month;
+    }
+
+    /** Clampa el año ancla a 2000..2100; fallback al año actual si es inválido. */
+    private function normalizeYear($value): int
+    {
+        $year = is_numeric($value) ? (int) $value : now()->year;
+
+        return ($year >= 2000 && $year <= 2100) ? $year : now()->year;
     }
 }

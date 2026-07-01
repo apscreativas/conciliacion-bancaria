@@ -33,11 +33,12 @@ Todos los jobs tienen:
 Genera el PDF del Estado de Resultados a partir de un `ExportRequest` con `type='pl_pdf'`, creado por `ExecutiveController@export`. Flujo de `handle()`:
 
 1. Marca el `ExportRequest` como `processing`.
-2. Lee `filters` (incl. **`team_id`**, `granularidad`, `empresa_id`, `month`, `year`).
+2. Lee `filters` (incl. **`team_id`**, `granularidad`, `empresa_id`, `month`, `year`, **`months`** — ventana 6/12, default 12).
 3. `PeriodResolver` arma los rangos (actual / anterior / YoY).
 4. `ProfitLossService::forPeriod(..., $teamId)` calcula el P&L actual, anterior, YoY y por empresa. **Pasa `team_id` explícito** porque el job corre en cola **sin auth** → el global scope de `TeamOwned` está apagado; sin esto sumaría todos los teams (ver `docs/security.md` y `docs/sdd/07-executive-dashboard.md`).
-5. `Pdf::loadView('exports.profit_loss.pdf_report', $data)->setPaper('a4','portrait')` (barryvdh/laravel-dompdf), sin clase en `app/Exports/`.
-6. `Storage::put("exports/{teamId}/{userId}/{uuid}.pdf", ...)` y marca el `ExportRequest` como `completed` con `file_path`/`file_name` (`estado_resultados_{year}_{month}.pdf`).
+5. **(Dashboard v2)** `FinanceAnalyticsService` (mismo `team_id` explícito) calcula la **serie mensual** (`monthlySeries` con el `months` guardado) y los desgloses del periodo (`egresosPorCategoria`, `egresosPorNaturaleza`, `topProveedores`, `nominaRollup`). Se inyectan a la vista y se renderizan en **tablas** (dompdf no renderiza charts JS) después de la tabla P&L.
+6. `Pdf::loadView('exports.profit_loss.pdf_report', $data)->setPaper('a4','portrait')` (barryvdh/laravel-dompdf), sin clase en `app/Exports/`.
+7. `Storage::put("exports/{teamId}/{userId}/{uuid}.pdf", ...)` y marca el `ExportRequest` como `completed` con `file_path`/`file_name` (`estado_resultados_{year}_{month}.pdf`).
 
 Flujo completo export→status→download (con polling) documentado en `docs/endpoints.md` (Dashboard ejecutivo) y `docs/flows/export.md`.
 
