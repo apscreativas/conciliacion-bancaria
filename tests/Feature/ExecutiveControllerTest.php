@@ -231,6 +231,7 @@ it('generates the PDF and marks the export completed (job)', function () {
     (new GenerateProfitLossPdfJob($export))->handle(
         app(\App\Services\Finance\PeriodResolver::class),
         app(\App\Services\Finance\ProfitLossService::class),
+        app(\App\Services\Finance\FinanceAnalyticsService::class),
     );
 
     $export->refresh();
