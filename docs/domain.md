@@ -23,7 +23,7 @@ Todos los modelos de dominio usan el trait `TeamOwned` salvo los marcados como "
 | `EgresoRecurrente` | `egresos_recurrentes` | TeamOwned | `HasFactory` | Plantilla de gasto recurrente (Finanzas Fase 3). El comando `egresos:generar-recurrentes` crea egresos según `frecuencia`/`proxima_generacion`/vigencia. `user_id` es `nullOnDelete` (borrar al creador no borra la plantilla) |
 | `Empleado` | `empleados` | TeamOwned | `HasFactory` | Plantilla de personal (Finanzas Fase 3B); fuente del comando `nomina:generar`. `salario_fiscal`/`salario_real` mensuales, `clasificacion` (`tecnica`/`administrativa`/null), `fecha_entrada`/`fecha_baja`, `activo`. `user_id` y `empresa_id` `nullOnDelete` (borrar al creador o la empresa no borra al empleado, que es registro financiero) |
 | `IngresoManual` | `ingresos_manuales` | TeamOwned | `HasFactory` | Ingreso real en efectivo que NO pasa por banco (Finanzas Fase 4; espejo de `Egreso`). Clasificado por `empresa_id` (opcional) + `categoria_id` (tipo=ingreso, requerida a nivel app). Campos `cliente` (nullable) y `metodo` enum(`efectivo`,`otro`) default `efectivo`. FKs `empresa_id`/`categoria_id` `nullOnDelete`; `user_id` (creador) nullable + `nullOnDelete` — un registro financiero sobrevive al borrado de su creador/catálogo. Index `(team_id, fecha)`. Es una de las fuentes de ingresos del P&L (Fase 5) |
-| `ClienteEmpresa` | `cliente_empresas` | TeamOwned | `HasFactory` | Catálogo auto-aprendido/editable **RFC del cliente → empresa** para INGRESOS. Identidad del cliente = `rfc` (estable); `nombre` solo display (último visto). `empresa_id` (FK empresas, `nullOnDelete` — borrar la empresa NO borra el mapeo), `veces` (int, cuántas veces se ha asignado → confianza), `ultima_asignacion_at` (nullable), `user_id` (quién asignó por última vez, `nullOnDelete`). **Unique** `(team_id, rfc)`. Lo alimenta `ClienteEmpresaService`; el `ReconciliationController` auto-asigna `empresa_id` al conciliar cuando el RFC tiene mapeo unívoco |
+| `ClienteEmpresa` | `cliente_empresas` | TeamOwned | `HasFactory` | Catálogo auto-aprendido/editable **RFC del cliente → empresa** para INGRESOS. Identidad del cliente = `rfc` (estable); `nombre` solo display (último visto). `empresa_id` (FK empresas, `nullOnDelete` — borrar la empresa NO borra el mapeo), `veces` (int, cuántas veces se ha asignado → confianza), `excluido` (boolean — "respetar etiquetas individuales", fuera de aprender/sugerir/aplicar), `ultima_asignacion_at` (nullable), `user_id` (quién asignó por última vez, `nullOnDelete`). **Unique** `(team_id, rfc)`. Lo alimenta `ClienteEmpresaService`; el `ReconciliationController` auto-asigna `empresa_id` al conciliar cuando el RFC tiene mapeo unívoco (no excluido) |
 
 ### Nota sobre `Banco`
 
@@ -256,11 +256,12 @@ El polling frontend considera "worker offline" si `status=queued` y `created_at 
 - `id`, `team_id` (FK cascade)
 - `rfc` (string) — identidad estable del cliente; `nombre` (string) — último visto, solo display
 - `empresa_id` (FK empresas, nullable, `nullOnDelete` — borrar la empresa NO borra el mapeo)
+- `excluido` (boolean, default false) — "respetar etiquetas individuales": el cliente queda fuera de aprender/sugerir/aplicar del catálogo; su `empresa_id` se conserva inerte (ver `business-rules.md` §14.7)
 - `veces` (unsignedInteger, default 0) — cuántas veces se ha asignado (medida de confianza del aprendizaje)
 - `ultima_asignacion_at` (timestamp nullable) — última asignación
 - `user_id` (FK users, nullable, `nullOnDelete`) — quién asignó por última vez
 - **Unique**: `(team_id, rfc)` — un solo mapeo por rfc dentro del team
-- Evidencia: `2026_07_01_000001_create_cliente_empresas_table.php`
+- Evidencia: `2026_07_01_000001_create_cliente_empresas_table.php`, `2026_07_01_000002_add_excluido_to_cliente_empresas_table.php`
 
 ---
 
@@ -278,7 +279,7 @@ El polling frontend considera "worker offline" si `status=queued` y `created_at 
 - `EgresoRecurrente`: `monto => decimal:2`, `fecha_inicio`/`fecha_fin`/`proxima_generacion => date`, `activo => boolean`, `dia_del_mes`/`num_pagos`/`pagos_generados => integer`
 - `Empleado`: `fecha_entrada`/`fecha_baja => date`, `salario_fiscal`/`salario_real => decimal:2`, `activo => boolean`
 - `IngresoManual`: `fecha => date`, `monto => decimal:2`
-- `ClienteEmpresa`: `veces => integer`, `ultima_asignacion_at => datetime`
+- `ClienteEmpresa`: `excluido => boolean`, `veces => integer`, `ultima_asignacion_at => datetime`
 - `User`: `email_verified_at => datetime`, `password => hashed` (via `casts()` method en Laravel 12)
 
 ---
@@ -294,7 +295,7 @@ Localizadas en `database/factories/`:
 - `EgresoRecurrenteFactory` (Finanzas Fase 3; default mensual, día 1, vigencia indefinida).
 - `EmpleadoFactory` (Finanzas Fase 3B; default activo, `clasificacion='administrativa'`, salarios fiscal 20000 / real 24000).
 - `IngresoManualFactory` (Finanzas Fase 4; categoría `tipo=ingreso` via `Categoria::factory()->ingreso()`, `cliente` opcional, `metodo` random efectivo/otro).
-- `ClienteEmpresaFactory` (Catálogo cliente→empresa; `rfc`/`nombre` fake, `empresa_id` null por defecto, `veces=0`, `user_id` via `User::factory()`).
+- `ClienteEmpresaFactory` (Catálogo cliente→empresa; `rfc`/`nombre` fake, `empresa_id` null por defecto, `excluido=false` con state `->excluido()`, `veces=0`, `user_id` via `User::factory()`).
 
 No hay factories para `Conciliacion`, `BankFormat`, `Tolerancia`, `TeamInvitation` — se crean con `forceCreate` en los tests.
 

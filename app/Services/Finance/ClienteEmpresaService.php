@@ -20,6 +20,9 @@ class ClienteEmpresaService
      * se incrementa cuando el mapeo es nuevo o cambia de empresa (mide confianza del
      * aprendizaje); re-asignar la MISMA empresa solo refresca nombre/fecha.
      *
+     * Los clientes con `excluido = true` (respetan etiquetas individuales) se saltan
+     * por completo: no se toca empresa, nombre, user, fecha ni veces.
+     *
      * @param  array  $facturas  lista de arrays `['rfc'=>..,'nombre'=>..]` o modelos Factura
      */
     public function recordar(int $teamId, ?int $userId, array $facturas, int $empresaId): void
@@ -42,6 +45,13 @@ class ClienteEmpresaService
                 ->where('team_id', $teamId)
                 ->where('rfc', $rfc)
                 ->first();
+
+            // Exclusión: el cliente "respeta etiquetas individuales" — no se aprende
+            // nada (ni empresa, ni nombre, ni fecha, ni veces). El mapeo existente
+            // queda inerte hasta que se des-excluya.
+            if ($cliente !== null && $cliente->excluido) {
+                continue;
+            }
 
             // Solo cuenta como "asignación" (incrementa veces) cuando el mapeo es
             // nuevo o cambia de empresa. Re-asignar la MISMA empresa solo refresca
@@ -75,6 +85,10 @@ class ClienteEmpresaService
      * Ser estricto evita mal-etiquetar grupos multi-RFC: si el grupo mezcla un RFC
      * conocido con uno desconocido, no se estampa la empresa del conocido a todo el
      * grupo.
+     *
+     * Los RFC con `excluido = true` quedan fuera del mapa, por lo que actúan como
+     * bloqueantes (igual que un RFC sin mapeo): cualquier grupo que los contenga
+     * devuelve null y se etiqueta a mano.
      */
     public function sugerirEmpresa(int $teamId, array $rfcs): ?int
     {
@@ -87,7 +101,7 @@ class ClienteEmpresaService
         $mapa = ClienteEmpresa::withoutGlobalScopes()
             ->where('team_id', $teamId)
             ->whereIn('rfc', $rfcs)
-            ->whereNotNull('empresa_id')
+            ->aplicable()
             ->pluck('empresa_id', 'rfc')
             ->all();
 
@@ -98,6 +112,8 @@ class ClienteEmpresaService
      * Regla estricta compartida: dado un conjunto de RFC y un mapa `rfc => empresa_id`,
      * devuelve la empresa SOLO si todos los RFC están mapeados y a la misma empresa.
      * Cualquier RFC sin entrada en el mapa, empresas distintas, o lista vacía → null.
+     * El mapa ya viene filtrado sin clientes excluidos, así que un RFC excluido cae
+     * en el caso "sin entrada" y bloquea al grupo.
      *
      * @param  array<int, string>  $rfcs
      * @param  array<string, int|string>  $mapa
@@ -154,7 +170,8 @@ class ClienteEmpresaService
      * Aplica el catálogo a los grupos de conciliación del team que aún no tienen
      * empresa: por cada group_id con empresa_id null, si sus RFC dan una
      * sugerencia unívoca, asigna esa empresa a todo el grupo. Deja intactos los
-     * grupos ambiguos o sin mapeo. Devuelve cuántos grupos se asignaron.
+     * grupos ambiguos, sin mapeo o que contengan un RFC excluido (respeta
+     * etiquetas individuales). Devuelve cuántos grupos se asignaron.
      */
     public function aplicarASinEmpresa(int $teamId): int
     {
@@ -180,10 +197,11 @@ class ClienteEmpresaService
                 ->all()
             );
 
-        // 1 query: catálogo del team como mapa rfc => empresa_id.
+        // 1 query: catálogo del team como mapa rfc => empresa_id (solo aplicables:
+        // un RFC excluido queda fuera y bloquea a su grupo en la regla estricta).
         $mapa = ClienteEmpresa::withoutGlobalScopes()
             ->where('team_id', $teamId)
-            ->whereNotNull('empresa_id')
+            ->aplicable()
             ->pluck('empresa_id', 'rfc')
             ->all();
 

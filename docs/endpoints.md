@@ -129,19 +129,19 @@ Catálogo auto-aprendido/editable **RFC del cliente → empresa** que pre-asigna
 | Método | URI | Controller@action | Nombre | Notas |
 |---|---|---|---|---|
 | GET | `/clients` | `ClienteEmpresaController@index` | `clients.index` | Inertia `Clients/Index` (props: `catalogo`, `empresas` activas, `recurrentes`) |
-| PATCH | `/clients/{client}` | `ClienteEmpresaController@update` | `clients.update` | Override manual del `empresa_id` del mapeo. Redirect. `empresa_id` `present`+`nullable`+`exists` scoped al team (nullable para des-asignar el default); registro de otro team → 404 |
-| POST | `/clients/aplicar-sugerencias` | `ClienteEmpresaController@aplicarSugerencias` | `clients.apply` | Aplica el catálogo a las conciliaciones (ingresos) del team sin empresa (`ClienteEmpresaService::aplicarASinEmpresa`); redirect con conteo de grupos asignados |
+| PATCH | `/clients/{client}` | `ClienteEmpresaController@update` | `clients.update` | PATCH **parcial** (solo actualiza claves presentes; sin ninguna clave reconocida → **422**, nunca no-op silencioso). `empresa_id` `sometimes`+`nullable`+`exists` scoped al team (null des-asigna el default); `excluido` `sometimes`+`boolean` ("respetar etiquetas individuales" — ver `business-rules.md` §14.7). Redirect. Registro de otro team → 404 |
+| POST | `/clients/aplicar-sugerencias` | `ClienteEmpresaController@aplicarSugerencias` | `clients.apply` | Aplica el catálogo a las conciliaciones (ingresos) del team sin empresa (`ClienteEmpresaService::aplicarASinEmpresa`); salta grupos con RFC excluido; redirect con conteo de grupos asignados |
 
 ### Props de `Clients/Index`
 
-- `catalogo`: mapeo aprendido/editable rfc→empresa (`id`, `rfc`, `nombre`, `empresa {id,nombre,color}|null`, `veces`, `ultima_asignacion_at`), ordenado por `veces` desc.
+- `catalogo`: mapeo aprendido/editable rfc→empresa (`id`, `rfc`, `nombre`, `empresa {id,nombre,color}|null`, `excluido`, `veces`, `ultima_asignacion_at`), ordenado por `veces` desc.
 - `empresas`: empresas activas del team (`ResolvesExpenseOptions::empresasActivas`) para el selector de default.
 - `recurrentes`: reporte de facturación recurrente / "dejó de facturar" (ver `docs/business-rules.md` §14) — solo clientes recurrentes, con los "sin factura este mes" primero.
 
 ### Aprendizaje / auto-asignación (aditivo, no toca el motor)
 
-- `PATCH /reconciliation/group/{groupId}/empresa` (`updateGroupEmpresa`): tras asignar `empresa_id` no-null, llama `ClienteEmpresaService::recordar(...)` → aprende el mapeo rfc→empresa de las facturas del grupo. Des-asignar (null) no aprende.
-- `POST /reconciliation` (`store`) y `POST /reconciliation/batch` (`batch`): tras `reconcile(...)` (que ahora devuelve el `group_id`), si los RFC de las facturas dan sugerencia unívoca vía `sugerirEmpresa(...)`, se asigna la empresa al grupo. RFC desconocido o multi-RFC ambiguo → grupo sin empresa (como hoy).
+- `PATCH /reconciliation/group/{groupId}/empresa` (`updateGroupEmpresa`): tras asignar `empresa_id` no-null, llama `ClienteEmpresaService::recordar(...)` → aprende el mapeo rfc→empresa de las facturas del grupo. Des-asignar (null) no aprende. RFC excluidos ("respetar etiquetas individuales") no re-aprenden.
+- `POST /reconciliation` (`store`) y `POST /reconciliation/batch` (`batch`): tras `reconcile(...)` (que ahora devuelve el `group_id`), si los RFC de las facturas dan sugerencia unívoca vía `sugerirEmpresa(...)`, se asigna la empresa al grupo. RFC desconocido, excluido o multi-RFC ambiguo → grupo sin empresa (como hoy).
 
 ---
 

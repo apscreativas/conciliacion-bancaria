@@ -3,6 +3,7 @@ import AuthenticatedLayout from "@/Layouts/AuthenticatedLayout.vue";
 import EmptyState from "@/Components/EmptyState.vue";
 import PrimaryButton from "@/Components/PrimaryButton.vue";
 import { Head, router } from "@inertiajs/vue3";
+import { ref } from "vue";
 import { formatDate } from "@/utils/format";
 
 interface Empresa {
@@ -16,6 +17,7 @@ interface CatalogoRow {
     rfc: string;
     nombre: string;
     empresa: Empresa | null;
+    excluido: boolean;
     veces: number;
     ultima_asignacion_at: string | null;
 }
@@ -49,6 +51,31 @@ const assignEmpresa = (row: CatalogoRow, event: Event) => {
         route("clients.update", row.id),
         { empresa_id: value === "" ? null : Number(value) },
         { preserveScroll: true },
+    );
+};
+
+// "Respetar etiquetas individuales": excluye al cliente del catálogo (no aprende,
+// no sugiere, no se aplica). El mapeo de empresa queda inerte hasta des-excluir.
+// Se lee el estado real del checkbox (no el prop, que puede estar viejo), se
+// deshabilita la fila mientras el PATCH está en vuelo y se revierte el visual
+// si el request falla — así el checkbox nunca miente sobre el estado en BD.
+const togglingIds = ref<Set<number>>(new Set());
+
+const toggleExcluido = (row: CatalogoRow, event: Event) => {
+    const checkbox = event.target as HTMLInputElement;
+    togglingIds.value.add(row.id);
+    router.patch(
+        route("clients.update", row.id),
+        { excluido: checkbox.checked },
+        {
+            preserveScroll: true,
+            onError: () => {
+                checkbox.checked = row.excluido;
+            },
+            onFinish: () => {
+                togglingIds.value.delete(row.id);
+            },
+        },
     );
 };
 
@@ -157,6 +184,7 @@ const aplicarCatalogo = () => {
                                 <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">{{ $t("RFC") }}</th>
                                 <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">{{ $t("Cliente") }}</th>
                                 <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">{{ $t("Empresa por defecto") }}</th>
+                                <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">{{ $t("Respetar etiquetas") }}</th>
                                 <th class="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase">{{ $t("Veces") }}</th>
                                 <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">{{ $t("Última asignación") }}</th>
                             </tr>
@@ -166,7 +194,7 @@ const aplicarCatalogo = () => {
                                 <td class="px-4 py-3 whitespace-nowrap text-sm font-mono text-gray-600 dark:text-gray-400">{{ row.rfc }}</td>
                                 <td class="px-4 py-3 text-sm text-gray-900 dark:text-gray-100 font-medium">{{ row.nombre }}</td>
                                 <td class="px-4 py-3 whitespace-nowrap">
-                                    <div class="flex items-center gap-2">
+                                    <div class="flex items-center gap-2" :class="row.excluido ? 'opacity-50' : ''">
                                         <span
                                             v-if="row.empresa"
                                             class="text-[10px] font-bold px-2 py-0.5 rounded border inline-block"
@@ -175,13 +203,28 @@ const aplicarCatalogo = () => {
                                         <select
                                             :value="row.empresa?.id ?? ''"
                                             @change="assignEmpresa(row, $event)"
-                                            :title="$t('Empresa por defecto')"
+                                            :title="row.excluido ? $t('La empresa por defecto no se usa mientras el cliente esté excluido') : $t('Empresa por defecto')"
                                             class="text-xs border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-1"
                                         >
                                             <option value="">{{ $t("Sin asignar") }}</option>
                                             <option v-for="e in empresas" :key="e.id" :value="e.id">{{ e.nombre }}</option>
                                         </select>
                                     </div>
+                                </td>
+                                <td class="px-4 py-3 whitespace-nowrap text-sm">
+                                    <label
+                                        class="inline-flex items-center gap-2 cursor-pointer"
+                                        :title="$t('No aprender ni sugerir empresa para este cliente; cada conciliación se etiqueta a mano.')"
+                                    >
+                                        <input
+                                            type="checkbox"
+                                            :checked="row.excluido"
+                                            :disabled="togglingIds.has(row.id)"
+                                            @change="toggleExcluido(row, $event)"
+                                            class="rounded border-gray-300 dark:border-gray-700 text-indigo-600 focus:ring-indigo-500 disabled:opacity-50"
+                                        />
+                                        <span class="text-xs text-gray-500">{{ $t("Respetar etiquetas") }}</span>
+                                    </label>
                                 </td>
                                 <td class="px-4 py-3 whitespace-nowrap text-right text-sm text-gray-700 dark:text-gray-300">{{ row.veces }}</td>
                                 <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
