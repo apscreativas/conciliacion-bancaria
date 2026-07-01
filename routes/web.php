@@ -49,6 +49,11 @@ Route::middleware('auth')->group(function () {
     Route::get('/reconciliation/export/{id}/status', [App\Http\Controllers\ReconciliationController::class, 'checkExportStatus'])->name('reconciliation.export.status');
     Route::get('/reconciliation/export/{id}/download', [App\Http\Controllers\ReconciliationController::class, 'downloadExport'])->name('reconciliation.export.download');
 
+    // Catálogo cliente→empresa (solo Ingresos) — cualquier miembro del team
+    Route::get('/clients', [App\Http\Controllers\ClienteEmpresaController::class, 'index'])->name('clients.index');
+    Route::patch('/clients/{client}', [App\Http\Controllers\ClienteEmpresaController::class, 'update'])->name('clients.update');
+    Route::post('/clients/aplicar-sugerencias', [App\Http\Controllers\ClienteEmpresaController::class, 'aplicarSugerencias'])->name('clients.apply');
+
     // Dashboard ejecutivo — Finanzas Fase 6 (Estado de Resultados + export PDF, solo owner)
     Route::get('/executive', [App\Http\Controllers\ExecutiveController::class, 'index'])->name('executive');
     Route::get('/executive/export', [App\Http\Controllers\ExecutiveController::class, 'export'])->middleware('throttle:10,1')->name('executive.export');
