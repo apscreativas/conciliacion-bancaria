@@ -292,6 +292,138 @@
     </div>
     @endif
 
+    <!-- ═══════════════ Analítica temporal (Dashboard v2) — tablas ═══════════════ -->
+
+    <!-- Serie mensual -->
+    @if(!empty($series))
+    <div class="section-title">Serie mensual &mdash; últimos {{ $months ?? 12 }} meses</div>
+    <div class="card">
+        <table class="emp-table">
+            <thead>
+                <tr>
+                    <th width="16%">Mes</th>
+                    <th width="17%" class="text-right">Ingresos</th>
+                    <th width="17%" class="text-right">Egresos</th>
+                    <th width="17%" class="text-right">Utilidad bruta</th>
+                    <th width="16%" class="text-right">EBITDA</th>
+                    <th width="17%" class="text-right">Utilidad neta</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach($series as $mes)
+                    <tr>
+                        <td class="font-bold">{{ $mes['label'] }}</td>
+                        <td class="text-right">{{ $fmt($mes['ingresos_total']) }}</td>
+                        <td class="text-right text-red">{{ $fmt($mes['egresos_total']) }}</td>
+                        <td class="text-right">{{ $fmt($mes['utilidad_bruta']) }} <span class="text-gray text-xs">({{ $pct($mes['margen_bruto']) }})</span></td>
+                        <td class="text-right">{{ $fmt($mes['ebitda']) }} <span class="text-gray text-xs">({{ $pct($mes['margen_ebitda']) }})</span></td>
+                        <td class="text-right" style="color: {{ (float) $mes['utilidad_neta'] >= 0 ? '#16A34A' : '#DC2626' }};">{{ $fmt($mes['utilidad_neta']) }} <span class="text-gray text-xs">({{ $pct($mes['margen_neto']) }})</span></td>
+                    </tr>
+                @endforeach
+            </tbody>
+        </table>
+    </div>
+    @endif
+
+    <!-- Egresos por categoría (top 10) -->
+    @if(!empty($egresosPorCategoria))
+    <div class="section-title">Egresos por categoría (periodo)</div>
+    <div class="card">
+        <table class="emp-table">
+            <thead>
+                <tr>
+                    <th width="50%">Categoría</th>
+                    <th width="25%">Grupo</th>
+                    <th width="25%" class="text-right">Total</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach(array_slice($egresosPorCategoria, 0, 10) as $cat)
+                    <tr>
+                        <td>{{ $cat['nombre'] }}</td>
+                        <td class="text-gray">{{ $cat['grupo'] ?? '—' }}</td>
+                        <td class="text-right font-bold text-red">{{ $fmt($cat['total']) }}</td>
+                    </tr>
+                @endforeach
+            </tbody>
+        </table>
+    </div>
+    @endif
+
+    <!-- Fijos vs variables + Costo de nómina -->
+    <table class="w-full" style="border-collapse: collapse;">
+        <tr>
+            <td width="49%" style="vertical-align: top; padding-right: 8px;">
+                <div class="section-title">Fijos vs variables (periodo)</div>
+                <div class="card">
+                    <table class="emp-table">
+                        <tbody>
+                            <tr>
+                                <td>Fijos</td>
+                                <td class="text-right font-bold">{{ $fmt($egresosPorNaturaleza['fijo']) }}</td>
+                            </tr>
+                            <tr>
+                                <td>Variables</td>
+                                <td class="text-right font-bold">{{ $fmt($egresosPorNaturaleza['variable']) }}</td>
+                            </tr>
+                            <tr>
+                                <td class="text-gray">Sin clasificar</td>
+                                <td class="text-right">{{ $fmt($egresosPorNaturaleza['sin_clasificar']) }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </td>
+            <td width="2%"></td>
+            <td width="49%" style="vertical-align: top; padding-left: 8px;">
+                <div class="section-title">Costo de nómina (periodo)</div>
+                <div class="card">
+                    <table class="emp-table">
+                        <tbody>
+                            <tr>
+                                <td>Fiscal</td>
+                                <td class="text-right font-bold">{{ $fmt($nominaRollup['fiscal']) }}</td>
+                            </tr>
+                            <tr>
+                                <td>Complemento</td>
+                                <td class="text-right font-bold">{{ $fmt($nominaRollup['complemento']) }}</td>
+                            </tr>
+                            <tr class="row-subtotal">
+                                <td class="font-bold">Total</td>
+                                <td class="text-right font-bold">{{ $fmt($nominaRollup['total']) }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </td>
+        </tr>
+    </table>
+
+    <!-- Top proveedores -->
+    @if(!empty($topProveedores))
+    <div class="section-title">Top proveedores (periodo)</div>
+    <div class="card">
+        <table class="emp-table">
+            <thead>
+                <tr>
+                    <th width="10%">#</th>
+                    <th width="60%">Proveedor</th>
+                    <th width="30%" class="text-right">Total</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach($topProveedores as $i => $prov)
+                    <tr>
+                        <td class="text-gray">{{ $i + 1 }}</td>
+                        <td>{{ $prov['proveedor'] }}</td>
+                        <td class="text-right font-bold text-red">{{ $fmt($prov['total']) }}</td>
+                    </tr>
+                @endforeach
+            </tbody>
+        </table>
+    </div>
+    @endif
+
     <!-- Footer -->
     <script type="text/php">
         if (isset($pdf)) {
