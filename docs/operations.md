@@ -175,7 +175,7 @@ Genera los egresos de **nómina quincenal** por cada empleado **activo** de **to
 - **Idempotencia**: respaldada en DB por el índice único `egresos_empleado_periodo_unique (empleado_id, fecha, concepto_nomina)`. El comando hace `exists()` (ruta normal) y envuelve el `INSERT` en `try/catch` de `QueryException` (carrera manual vs cron → duplicado rechazado y tratado como "ya generado"). El discriminador `concepto_nomina` desacopla la idempotencia de la categoría, así que cambiar `clasificacion` entre corridas **no** duplica el egreso fiscal.
 - **Ventana móvil de catch-up: 40 días** (default, sin `--month`): recorre las quincenas con fecha nominal entre `hoy-40d` y `hoy`. Nunca pre-genera futuro (`nominal <= hoy`).
 - **`--month=YYYY-MM`**: apunta a ese mes (ignora la ventana móvil) — para backfill de meses fuera de la ventana.
-- **`--dry-run`**: reporta sin persistir.
+- **`--dry-run`**: reporta sin persistir. El resumen cuenta los egresos que **sí se generarían** (preview fiel), no cero.
 - **Resumen** de corrida: egresos creados / omitidos por categoría faltante / complemento ≤ 0.
 - **Limitación**: un outage > 40 días deja huecos; reponerlos con `--month=YYYY-MM` por cada mes faltante.
 - **Back-fill usa valores ACTUALES**: al regenerar una quincena ya vencida, toma el `salario_*`/`clasificacion` vigentes hoy (no hay historial de sueldos). Por eso un aumento aplica al **siguiente** periodo: edita el sueldo después de que la quincena en curso ya se haya generado.
