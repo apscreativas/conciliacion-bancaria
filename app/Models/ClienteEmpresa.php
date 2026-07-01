@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
@@ -17,15 +18,27 @@ class ClienteEmpresa extends Model
         'rfc',
         'nombre',
         'empresa_id',
+        'excluido',
         'veces',
         'ultima_asignacion_at',
         'user_id',
     ];
 
     protected $casts = [
+        'excluido' => 'boolean',
         'veces' => 'integer',
         'ultima_asignacion_at' => 'datetime',
     ];
+
+    /**
+     * Mapeos aplicables del catálogo: con empresa asignada y NO excluidos
+     * ("respetar etiquetas individuales"). Único punto de verdad del predicado —
+     * todo lector del catálogo que sugiera/aplique/muestre la empresa debe usarlo.
+     */
+    public function scopeAplicable(Builder $query): Builder
+    {
+        return $query->whereNotNull('empresa_id')->where('excluido', false);
+    }
 
     public function empresa()
     {

@@ -226,6 +226,114 @@ it('aplicarASinEmpresa asigna grupos sin empresa con sugerencia unívoca y deja 
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Exclusión (respetar etiquetas individuales)
+// ─────────────────────────────────────────────────────────────────────────────
+it('recordar salta un rfc excluido: conserva empresa, nombre, veces y fecha intactos', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $empresaA = Empresa::factory()->create(['team_id' => $team->id]);
+    $empresaB = Empresa::factory()->create(['team_id' => $team->id]);
+
+    $cliente = ClienteEmpresa::factory()->excluido()->create([
+        'team_id' => $team->id,
+        'rfc' => 'XAXX010101000',
+        'nombre' => 'Nombre Original',
+        'empresa_id' => $empresaA->id,
+        'veces' => 2,
+        'ultima_asignacion_at' => '2026-06-01 10:00:00',
+    ]);
+
+    (new ClienteEmpresaService)->recordar($team->id, $user->id, [
+        ['rfc' => 'XAXX010101000', 'nombre' => 'Nombre Nuevo'],
+    ], $empresaB->id);
+
+    $fresh = $cliente->fresh();
+    expect($fresh->empresa_id)->toBe($empresaA->id) // NO last-wins
+        ->and($fresh->nombre)->toBe('Nombre Original')
+        ->and($fresh->veces)->toBe(2)
+        ->and($fresh->ultima_asignacion_at->toDateTimeString())->toBe('2026-06-01 10:00:00')
+        ->and($fresh->excluido)->toBeTrue();
+});
+
+it('recordar en lote mixto aprende los rfc no excluidos y salta el excluido', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $empresaA = Empresa::factory()->create(['team_id' => $team->id]);
+    $empresaB = Empresa::factory()->create(['team_id' => $team->id]);
+
+    ClienteEmpresa::factory()->excluido()->create([
+        'team_id' => $team->id,
+        'rfc' => 'XAXX010101000',
+        'empresa_id' => $empresaA->id,
+        'veces' => 2,
+    ]);
+
+    (new ClienteEmpresaService)->recordar($team->id, $user->id, [
+        ['rfc' => 'XAXX010101000', 'nombre' => 'Público'],
+        ['rfc' => 'AAA010101AAA', 'nombre' => 'Cliente Normal'],
+    ], $empresaB->id);
+
+    // El excluido no cambió; el normal sí aprendió.
+    expect(ClienteEmpresa::withoutGlobalScopes()->where('team_id', $team->id)->where('rfc', 'XAXX010101000')->value('empresa_id'))->toBe($empresaA->id);
+    expect(ClienteEmpresa::withoutGlobalScopes()->where('team_id', $team->id)->where('rfc', 'AAA010101AAA')->value('empresa_id'))->toBe($empresaB->id);
+});
+
+it('sugerirEmpresa devuelve null para un rfc excluido aunque tenga empresa mapeada', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $empresa = Empresa::factory()->create(['team_id' => $team->id]);
+
+    ClienteEmpresa::factory()->excluido()->create([
+        'team_id' => $team->id,
+        'rfc' => 'XAXX010101000',
+        'empresa_id' => $empresa->id,
+    ]);
+
+    expect((new ClienteEmpresaService)->sugerirEmpresa($team->id, ['XAXX010101000']))->toBeNull();
+});
+
+it('sugerirEmpresa trata el rfc excluido como bloqueante en grupo multi-rfc', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $empresa = Empresa::factory()->create(['team_id' => $team->id]);
+    $svc = new ClienteEmpresaService;
+
+    // Ambos mapean a la MISMA empresa, pero uno está excluido → null igual.
+    $svc->recordar($team->id, $user->id, [['rfc' => 'AAA010101AAA', 'nombre' => 'C']], $empresa->id);
+    ClienteEmpresa::factory()->excluido()->create([
+        'team_id' => $team->id,
+        'rfc' => 'XAXX010101000',
+        'empresa_id' => $empresa->id,
+    ]);
+
+    expect($svc->sugerirEmpresa($team->id, ['AAA010101AAA', 'XAXX010101000']))->toBeNull();
+});
+
+it('aplicarASinEmpresa salta los grupos que contienen un rfc excluido y asigna el resto', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $empresa = Empresa::factory()->create(['team_id' => $team->id]);
+    $svc = new ClienteEmpresaService;
+
+    $svc->recordar($team->id, $user->id, [['rfc' => 'AAA010101AAA', 'nombre' => 'C']], $empresa->id);
+    ClienteEmpresa::factory()->excluido()->create([
+        'team_id' => $team->id,
+        'rfc' => 'XAXX010101000',
+        'empresa_id' => $empresa->id,
+    ]);
+
+    // Grupo 1: rfc normal → se asigna. Grupo 2: rfc excluido → se salta.
+    ceConciliacion($team->id, $user->id, 'g1', 'AAA010101AAA', 'C');
+    ceConciliacion($team->id, $user->id, 'g2', 'XAXX010101000', 'Público');
+
+    $count = $svc->aplicarASinEmpresa($team->id);
+
+    expect($count)->toBe(1);
+    expect(Conciliacion::withoutGlobalScopes()->where('group_id', 'g1')->value('empresa_id'))->toBe($empresa->id);
+    expect(Conciliacion::withoutGlobalScopes()->where('group_id', 'g2')->value('empresa_id'))->toBeNull();
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // rfcsDeGrupo
 // ─────────────────────────────────────────────────────────────────────────────
 it('rfcsDeGrupo devuelve rfc/nombre únicos por rfc del grupo', function () {

@@ -298,15 +298,17 @@ El servicio `App\Services\Finance\ClienteEmpresaService` (POPO team-explícito) 
 
 - La identidad del cliente es **`facturas.rfc`** (estable). `nombre` es solo display (último visto). Un mapeo por `(team_id, rfc)` (unique).
 - `empresa_id` es `nullOnDelete`: borrar la empresa NO borra el mapeo. `veces` cuenta cuántas veces se ha asignado (confianza); `ultima_asignacion_at`/`user_id` registran la última asignación.
+- `excluido` (boolean, default false): el cliente "respeta etiquetas individuales" — queda fuera del aprendizaje, la sugerencia y la aplicación al histórico. Ver §14.8.
 
 ### 14.2 Auto-aprendizaje (`recordar`)
 
-- Cuando se asigna una empresa **no-null** a un grupo conciliado vía `updateGroupEmpresa`, el controller llama `ClienteEmpresaService::recordar(teamId, userId, rfcsDeGrupo(groupId), empresaId)`: por cada RFC único de las facturas del grupo hace `updateOrCreate(['team_id','rfc'], [...])` (**last-wins**: la última asignación gana empresa/nombre/user/fecha) e **incrementa `veces` +1**.
+- Cuando se asigna una empresa **no-null** a un grupo conciliado vía `updateGroupEmpresa`, el controller llama `ClienteEmpresaService::recordar(teamId, userId, rfcsDeGrupo(groupId), empresaId)`: por cada RFC único de las facturas del grupo hace `updateOrCreate(['team_id','rfc'], [...])` (**last-wins**: la última asignación gana empresa/nombre/user/fecha). `veces` se incrementa solo cuando el mapeo es **nuevo o cambia de empresa**; re-asignar la misma empresa solo refresca nombre/fecha.
 - **Des-asignar** (empresa null) NO aprende nada.
+- Los RFC con `excluido = true` se **saltan por completo** (no se toca empresa, nombre, user, fecha ni veces).
 
 ### 14.3 Sugerencia (`sugerirEmpresa`)
 
-Dado un conjunto de RFC, devuelve un `empresa_id` **solo si** todos los RFC que existen en el catálogo mapean a la **misma** empresa y hay al menos uno mapeado. RFC sin mapeo se ignoran. Si los mapeos difieren (multi-RFC ambiguo) o ninguno mapea → `null` (el grupo queda sin empresa).
+Dado un conjunto de RFC, devuelve un `empresa_id` **solo si TODOS** los RFC del conjunto están mapeados en el catálogo (con `empresa_id` no-null, no excluidos) **y** mapean a la **misma** empresa. La regla es **estricta**: cualquier RFC sin mapeo, con mapeo excluido, o con empresas distintas (ambiguo) → `null` (el grupo queda sin empresa). Ser estricto evita estampar la empresa de un RFC conocido a un grupo que mezcla RFC desconocidos.
 
 ### 14.4 Auto-asignación al conciliar
 
@@ -315,7 +317,7 @@ Dado un conjunto de RFC, devuelve un `empresa_id` **solo si** todos los RFC que 
 
 ### 14.5 Aplicar catálogo al histórico (`aplicarASinEmpresa`)
 
-- `POST /clients/aplicar-sugerencias` recorre los grupos de conciliación del team con `empresa_id` null; por cada uno, si sus RFC dan sugerencia unívoca, asigna esa empresa a todo el grupo. Deja intactos los ambiguos/sin mapeo. Devuelve cuántos grupos asignó (arrastra el histórico existente).
+- `POST /clients/aplicar-sugerencias` recorre los grupos de conciliación del team con `empresa_id` null; por cada uno, si sus RFC dan sugerencia unívoca, asigna esa empresa a todo el grupo. Deja intactos los ambiguos, sin mapeo o con RFC excluido. Devuelve cuántos grupos asignó (arrastra el histórico existente).
 
 ### 14.6 Detección de facturación recurrente / "dejó de facturar"
 
@@ -323,9 +325,20 @@ Reporte derivado de `facturas` (por `rfc`, `fecha_emision`), calculado en `Clien
 
 - **`recurrente`** = facturó en **≥3 de los últimos 4 meses** (meses distintos con factura ∩ ventana ≥ 3).
 - **`sin_factura_mes_actual`** = es recurrente **y** no tiene factura en el mes en curso (`Y-m`).
-- Se cruza con el catálogo para mostrar la empresa mapeada. Devuelve **solo** los recurrentes, con los "sin factura este mes" primero, luego por fecha más reciente. Es una alerta de cliente mensual que dejó de facturar.
+- Se cruza con el catálogo para mostrar la empresa mapeada (los clientes excluidos se muestran "Sin asignar": su mapeo no se va a aplicar). Devuelve **solo** los recurrentes, con los "sin factura este mes" primero, luego por fecha más reciente. Es una alerta de cliente mensual que dejó de facturar.
 
-### 14.7 Tenancy
+### 14.7 Exclusión del catálogo (respetar etiquetas individuales)
+
+Para clientes genéricos cuyas facturas aplican a empresas **distintas** según el caso (ej. "ventas al público en general", RFC `XAXX010101000`), el modelo `(team_id, rfc) → 1 empresa` con last-wins produce ping-pong y auto-asignaciones incorrectas. La bandera `cliente_empresas.excluido` (toggle "Respetar etiquetas" en `/clients`) apaga el catálogo para ese RFC:
+
+- **No aprende**: `recordar` lo salta por completo (empresa/nombre/veces/fecha intactos).
+- **No sugiere**: queda fuera del mapa de `sugerirEmpresa` → actúa como bloqueante (regla estricta): cualquier grupo que lo contenga queda **sin empresa** al conciliar y se etiqueta a mano en el historial.
+- **No se aplica**: `aplicarASinEmpresa` salta los grupos que lo contengan.
+- La **asignación manual por grupo** en el historial sigue funcionando normal (solo se apaga el aprendizaje).
+- El `empresa_id` del mapeo **se conserva inerte** (reversible: al des-excluir vuelve a operar tal cual).
+- Excluir **no** limpia conciliaciones ya auto-asignadas antes de la exclusión — se corrigen a mano en el historial.
+
+### 14.8 Tenancy
 
 Cada método del servicio recibe `teamId` explícito y aísla lectura/escritura por team con `withoutGlobalScopes()->where('team_id', ...)` — es queue-safe (no depende del scope ambiente de `TeamOwned`). El controller además valida `team_id === current_team_id` (defense in depth; registro ajeno → 404).
 
