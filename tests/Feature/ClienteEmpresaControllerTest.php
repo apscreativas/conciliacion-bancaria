@@ -120,6 +120,97 @@ it('rejects an empresa from another team (422)', function () {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// update — exclusión (respetar etiquetas individuales)
+// ─────────────────────────────────────────────────────────────────────────────
+it('lets a member toggle excluido on and off via PATCH', function () {
+    $owner = User::factory()->create();
+    $team = $owner->currentTeam;
+    $member = ceMiembro($team->id);
+
+    $client = ClienteEmpresa::factory()->create(['team_id' => $team->id]);
+
+    actingAs($member)->patch(route('clients.update', $client->id), ['excluido' => true])
+        ->assertRedirect()
+        ->assertSessionHasNoErrors();
+    expect($client->fresh()->excluido)->toBeTrue();
+
+    actingAs($member)->patch(route('clients.update', $client->id), ['excluido' => false])
+        ->assertRedirect()
+        ->assertSessionHasNoErrors();
+    expect($client->fresh()->excluido)->toBeFalse();
+});
+
+it('toggling excluido does not clear the mapped empresa (queda inerte)', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $empresa = Empresa::factory()->create(['team_id' => $team->id]);
+    $client = ClienteEmpresa::factory()->create(['team_id' => $team->id, 'empresa_id' => $empresa->id]);
+
+    actingAs($user)->patch(route('clients.update', $client->id), ['excluido' => true])
+        ->assertSessionHasNoErrors();
+
+    $fresh = $client->fresh();
+    expect($fresh->excluido)->toBeTrue()
+        ->and($fresh->empresa_id)->toBe($empresa->id);
+});
+
+it('updating empresa_id alone does not reset excluido (PATCH parcial)', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $empresa = Empresa::factory()->create(['team_id' => $team->id]);
+    $client = ClienteEmpresa::factory()->excluido()->create(['team_id' => $team->id, 'empresa_id' => null]);
+
+    actingAs($user)->patch(route('clients.update', $client->id), ['empresa_id' => $empresa->id])
+        ->assertSessionHasNoErrors();
+
+    $fresh = $client->fresh();
+    expect($fresh->empresa_id)->toBe($empresa->id)
+        ->and($fresh->excluido)->toBeTrue();
+});
+
+it('index exposes excluido in the catalogo payload', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    ClienteEmpresa::factory()->excluido()->create(['team_id' => $team->id]);
+
+    actingAs($user)->get(route('clients.index'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Clients/Index')
+            ->where('catalogo.0.excluido', true)
+        );
+});
+
+it('recurrentes shows no empresa for an excluded client', function () {
+    Carbon::setTestNow('2026-07-15');
+
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $empresa = Empresa::factory()->create(['team_id' => $team->id]);
+
+    // Cliente recurrente (may/jun/jul) con mapeo en catálogo pero excluido.
+    ClienteEmpresa::factory()->excluido()->create([
+        'team_id' => $team->id,
+        'rfc' => 'XAXX010101000',
+        'empresa_id' => $empresa->id,
+    ]);
+    ceFactura($team->id, $user->id, 'XAXX010101000', 'Público', '2026-05-10');
+    ceFactura($team->id, $user->id, 'XAXX010101000', 'Público', '2026-06-10');
+    ceFactura($team->id, $user->id, 'XAXX010101000', 'Público', '2026-07-10');
+
+    actingAs($user)->get(route('clients.index'))
+        ->assertInertia(function (Assert $page) {
+            $recurrentes = collect($page->toArray()['props']['recurrentes']);
+            $row = $recurrentes->firstWhere('rfc', 'XAXX010101000');
+
+            expect($row)->not->toBeNull()
+                ->and($row['empresa'])->toBeNull(); // el mapeo excluido no se muestra
+        });
+
+    Carbon::setTestNow();
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // aplicarSugerencias
 // ─────────────────────────────────────────────────────────────────────────────
 it('applies the catalog to reconciliations without a company and redirects', function () {

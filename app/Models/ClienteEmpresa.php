@@ -17,12 +17,14 @@ class ClienteEmpresa extends Model
         'rfc',
         'nombre',
         'empresa_id',
+        'excluido',
         'veces',
         'ultima_asignacion_at',
         'user_id',
     ];
 
     protected $casts = [
+        'excluido' => 'boolean',
         'veces' => 'integer',
         'ultima_asignacion_at' => 'datetime',
     ];

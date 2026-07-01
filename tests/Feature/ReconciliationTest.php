@@ -449,6 +449,83 @@ test('store auto-asigna la empresa cuando el RFC ya está en el catálogo', func
     ]);
 });
 
+test('store deja el grupo sin empresa cuando el RFC está excluido aunque tenga mapeo', function () {
+    [$user, $team, $archivo, $banco] = ceSetup();
+    $empresa = Empresa::factory()->create(['team_id' => $team->id]);
+
+    // Catálogo con mapeo pero excluido (respeta etiquetas individuales).
+    ClienteEmpresa::create([
+        'team_id' => $team->id, 'rfc' => 'XAXX010101000', 'nombre' => 'Público en General',
+        'empresa_id' => $empresa->id, 'excluido' => true, 'veces' => 2,
+        'ultima_asignacion_at' => now(), 'user_id' => $user->id,
+    ]);
+
+    $factura = Factura::create([
+        'user_id' => $user->id, 'team_id' => $team->id, 'file_id_xml' => $archivo->id,
+        'uuid' => 'UUID-EXCL', 'monto' => 300.00, 'fecha_emision' => '2026-01-10',
+        'rfc' => 'XAXX010101000', 'nombre' => 'Público en General',
+    ]);
+    $movimiento = Movimiento::create([
+        'user_id' => $user->id, 'team_id' => $team->id, 'banco_id' => $banco->id, 'file_id' => $archivo->id,
+        'fecha' => '2026-01-12', 'monto' => 300.00, 'tipo' => 'abono', 'descripcion' => 'Pago', 'hash' => 'h-excl',
+    ]);
+
+    $this->actingAs($user)->post(route('reconciliation.store'), [
+        'invoice_ids' => [$factura->id], 'movement_ids' => [$movimiento->id],
+    ])->assertRedirect();
+
+    // El grupo queda sin empresa (se etiqueta a mano en el historial).
+    $this->assertDatabaseHas('conciliacions', [
+        'factura_id' => $factura->id,
+        'empresa_id' => null,
+    ]);
+});
+
+test('updateGroupEmpresa asigna al grupo pero NO re-aprende cuando el RFC está excluido', function () {
+    [$user, $team, $archivo, $banco] = ceSetup();
+    $empresaA = Empresa::factory()->create(['team_id' => $team->id]);
+    $empresaB = Empresa::factory()->create(['team_id' => $team->id]);
+
+    // Catálogo excluido apuntando a A (inerte).
+    $cliente = ClienteEmpresa::create([
+        'team_id' => $team->id, 'rfc' => 'XAXX010101000', 'nombre' => 'Público en General',
+        'empresa_id' => $empresaA->id, 'excluido' => true, 'veces' => 2,
+        'ultima_asignacion_at' => now(), 'user_id' => $user->id,
+    ]);
+
+    $factura = Factura::create([
+        'user_id' => $user->id, 'team_id' => $team->id, 'file_id_xml' => $archivo->id,
+        'uuid' => 'UUID-EXCL-2', 'monto' => 500.00, 'fecha_emision' => '2026-01-10',
+        'rfc' => 'XAXX010101000', 'nombre' => 'Público en General',
+    ]);
+    $movimiento = Movimiento::create([
+        'user_id' => $user->id, 'team_id' => $team->id, 'banco_id' => $banco->id, 'file_id' => $archivo->id,
+        'fecha' => '2026-01-12', 'monto' => 500.00, 'tipo' => 'abono', 'descripcion' => 'Pago', 'hash' => 'h-excl2',
+    ]);
+
+    $this->actingAs($user)->post(route('reconciliation.store'), [
+        'invoice_ids' => [$factura->id], 'movement_ids' => [$movimiento->id],
+    ])->assertRedirect();
+
+    $groupId = Conciliacion::where('factura_id', $factura->id)->value('group_id');
+
+    // Etiqueta manual a B: el grupo SÍ se asigna...
+    $this->actingAs($user)->patch(route('reconciliation.group.empresa.update', $groupId), [
+        'empresa_id' => $empresaB->id,
+    ])->assertRedirect();
+
+    $this->assertDatabaseHas('conciliacions', [
+        'factura_id' => $factura->id,
+        'empresa_id' => $empresaB->id,
+    ]);
+
+    // ...pero el catálogo NO re-aprende (sigue en A, veces=2, excluido).
+    $fresh = $cliente->fresh();
+    expect($fresh->empresa_id)->toBe($empresaA->id)
+        ->and($fresh->veces)->toBe(2)
+        ->and((bool) $fresh->excluido)->toBeTrue();
+});
+
 test('store deja el grupo sin empresa cuando el RFC es desconocido', function () {
     [$user, $team, $archivo, $banco] = ceSetup();
 

@@ -43,6 +43,7 @@ class ClienteEmpresaController extends Controller
                     'nombre' => $c->empresa->nombre,
                     'color' => $c->empresa->color,
                 ] : null,
+                'excluido' => $c->excluido,
                 'veces' => $c->veces,
                 'ultima_asignacion_at' => $c->ultima_asignacion_at?->toDateString(),
             ]);
@@ -56,7 +57,10 @@ class ClienteEmpresaController extends Controller
 
     /**
      * Override manual del mapeo rfc → empresa. Cualquier miembro del team.
-     * Valida `empresa_id` scoped al team (nullable para des-asignar el default).
+     * PATCH parcial: solo se actualizan las claves presentes en el payload.
+     * `empresa_id` scoped al team (nullable para des-asignar el default);
+     * `excluido` marca al cliente como "respeta etiquetas individuales"
+     * (no aprende, no sugiere, no se aplica — ver ClienteEmpresaService).
      */
     public function update(Request $request, ClienteEmpresa $client): RedirectResponse
     {
@@ -69,15 +73,18 @@ class ClienteEmpresaController extends Controller
 
         $validated = $request->validate([
             'empresa_id' => [
-                'present',
+                'sometimes',
                 'nullable',
                 Rule::exists('empresas', 'id')->where(fn ($q) => $q->where('team_id', $teamId)),
             ],
+            'excluido' => ['sometimes', 'boolean'],
         ]);
 
-        $client->update(['empresa_id' => $validated['empresa_id']]);
+        if ($validated !== []) {
+            $client->update($validated);
+        }
 
-        return back()->with('success', 'Empresa por defecto actualizada.');
+        return back()->with('success', 'Cliente actualizado.');
     }
 
     /**
@@ -115,8 +122,10 @@ class ClienteEmpresaController extends Controller
             ->all();
 
         // Mapa rfc → empresa desde el catálogo (para mostrar la empresa por defecto).
+        // Los excluidos se muestran "Sin asignar": su empresa no se va a aplicar.
         $mapaEmpresa = ClienteEmpresa::where('team_id', $teamId)
             ->whereNotNull('empresa_id')
+            ->where('excluido', false)
             ->with('empresa:id,nombre,color')
             ->get()
             ->keyBy('rfc');

@@ -1,6 +1,7 @@
 # SDD — Catálogo cliente→empresa + auto-asignación de ingresos
 
 > SDD-lite. Módulo: Finanzas / Catálogo cliente→empresa · Fase: adicional (post Fase 6) · Autor: Juan Carlos Portales · Fecha: 2026-07-01 · Estado: implementado
+> Actualización 2026-07-01: exclusión por cliente (`excluido`, "respetar etiquetas individuales") para clientes genéricos multi-empresa (ej. público en general `XAXX010101000`).
 
 ## 1. Objetivo
 
@@ -20,6 +21,7 @@ id, team_id (FK cascade)
 rfc (string)                      # identidad estable del cliente
 nombre (string)                   # último visto, solo display
 empresa_id (FK empresas, nullable, nullOnDelete)
+excluido (boolean default false)  # "respetar etiquetas individuales": fuera de aprender/sugerir/aplicar
 veces (unsignedInteger default 0) # confianza del aprendizaje
 ultima_asignacion_at (timestamp nullable)
 user_id (FK users, nullable, nullOnDelete)  # quién asignó por última vez
@@ -27,14 +29,14 @@ timestamps
 unique (team_id, rfc)
 ```
 
-Evidencia: `2026_07_01_000001_create_cliente_empresas_table.php`.
+Evidencia: `2026_07_01_000001_create_cliente_empresas_table.php`, `2026_07_01_000002_add_excluido_to_cliente_empresas_table.php`.
 
 ## 4. Endpoints / rutas
 
 | Método | Ruta | Controller | Notas (auth, ownership) |
 |---|---|---|---|
 | GET | `/clients` | `ClienteEmpresaController@index` | Cualquier miembro; Inertia `Clients/Index` (`catalogo`, `empresas`, `recurrentes`) |
-| PATCH | `/clients/{client}` | `ClienteEmpresaController@update` | Override manual `empresa_id` (`present`+`nullable`+`exists` scoped). Otro team → 404 |
+| PATCH | `/clients/{client}` | `ClienteEmpresaController@update` | PATCH **parcial** (solo claves presentes): `empresa_id` (`sometimes`+`nullable`+`exists` scoped) y `excluido` (`sometimes`+`boolean`). Otro team → 404 |
 | POST | `/clients/aplicar-sugerencias` | `ClienteEmpresaController@aplicarSugerencias` | Aplica el catálogo al histórico sin empresa; redirect con conteo |
 
 Además (aditivo, no rutas nuevas): `store`/`batch`/`updateGroupEmpresa` de `ReconciliationController` invocan `ClienteEmpresaService`.
@@ -52,18 +54,19 @@ Además (aditivo, no rutas nuevas): `store`/`batch`/`updateGroupEmpresa` de `Rec
 ## 6. Reglas de negocio y casos borde
 
 - **Identidad = `facturas.rfc`** (estable); `nombre` solo display. Un mapeo por `(team_id, rfc)`.
-- **`recordar`** (auto-aprendizaje): al asignar empresa **no-null** a un grupo (`updateGroupEmpresa`), `updateOrCreate` por rfc (**last-wins**) e incrementa `veces`. Des-asignar (null) no aprende. Deduplica RFC dentro del lote (último nombre gana). Acepta arrays `[{rfc,nombre}]` o modelos `Factura`.
-- **`sugerirEmpresa`**: devuelve empresa si TODOS los RFC conocidos mapean a la MISMA empresa y hay ≥1 mapeado; RFC sin mapeo se ignoran; ambiguo (multi-RFC distinto) o ninguno → `null`.
-- **Auto-asignación al conciliar** (`store`/`batch`): tras `reconcile` (que devuelve `group_id`), si `sugerirEmpresa` da empresa, `update` del grupo. RFC desconocido / ambiguo → grupo sin empresa (como hoy). Fuera de la transacción del motor.
-- **`aplicarASinEmpresa`**: recorre grupos con `empresa_id` null; asigna los que tengan sugerencia unívoca; deja ambiguos/sin-mapeo. Devuelve conteo.
+- **`recordar`** (auto-aprendizaje): al asignar empresa **no-null** a un grupo (`updateGroupEmpresa`), `updateOrCreate` por rfc (**last-wins**); `veces` solo se incrementa cuando el mapeo es nuevo o cambia de empresa. Des-asignar (null) no aprende. Deduplica RFC dentro del lote (último nombre gana). Acepta arrays `[{rfc,nombre}]` o modelos `Factura`. **RFC excluidos se saltan por completo** (empresa/nombre/veces/fecha intactos).
+- **`sugerirEmpresa`** (regla **estricta**): devuelve empresa solo si TODOS los RFC del conjunto están mapeados (no-null, no excluidos) y a la MISMA empresa. Cualquier RFC sin mapeo, excluido, o con empresas distintas (ambiguo) → `null`. (Corrige redacción previa "RFC sin mapeo se ignoran": el código siempre implementó la regla estricta — un RFC sin mapeo bloquea al grupo.)
+- **Auto-asignación al conciliar** (`store`/`batch`): tras `reconcile` (que devuelve `group_id`), si `sugerirEmpresa` da empresa, `update` del grupo. RFC desconocido / ambiguo / excluido → grupo sin empresa (como hoy). Fuera de la transacción del motor.
+- **`aplicarASinEmpresa`**: recorre grupos con `empresa_id` null; asigna los que tengan sugerencia unívoca; deja ambiguos/sin-mapeo/excluidos. Devuelve conteo.
+- **Exclusión (`excluido`)**: para clientes genéricos cuyas facturas aplican a empresas distintas según el caso (público en general). Toggle "Respetar etiquetas" en `/clients`. No aprende, no sugiere (bloqueante), no se aplica; la asignación manual por grupo en history sigue normal. El `empresa_id` del mapeo se conserva **inerte** (reversible al des-excluir). Excluir no limpia conciliaciones auto-asignadas previamente. En el reporte de recurrentes el excluido se muestra "Sin asignar".
 - **Detección recurrente / "dejó de facturar"**: ventana 4 meses (actual + 3 previos). `recurrente` = facturó en ≥3 de los 4; `sin_factura_mes_actual` = recurrente sin factura en el mes en curso. Devuelve solo recurrentes, "sin factura este mes" primero.
 - **Casos borde:** borrar empresa → mapeo sobrevive (`nullOnDelete`); reasignar la misma empresa → no rompe (idempotente); des-asignar no borra el aprendizaje previo; `reconcile` retornando `group_id` es compatible con callers que lo ignoran.
 
 ## 7. Plan de pruebas
 
-- **`ClienteEmpresaServiceTest`** (Feature): `recordar` (upsert por rfc, last-wins, incrementa veces, dedup de lote, acepta modelos); `sugerirEmpresa` (mono-rfc, multi-rfc misma, multi-rfc distinta→null, sin mapeo→null, ignora rfc sin mapeo); `aplicarASinEmpresa` (asigna unívocos, deja ambiguos); `rfcsDeGrupo`; tenancy (otro team no entra).
-- **`ClienteEmpresaControllerTest`** (Feature): index render (catálogo + empresas + recurrentes); cualquier-miembro no-owner; update override; empresa de otro team → 422; aplicarSugerencias; no fuga cross-team; update de otro team → 404; detección flags/clears mes actual.
-- **`ReconciliationTest`** (extendido): `updateGroupEmpresa` aprende el mapeo; `store` auto-asigna con RFC conocido; `store` deja sin empresa con RFC desconocido.
+- **`ClienteEmpresaServiceTest`** (Feature): `recordar` (upsert por rfc, last-wins, incrementa veces, dedup de lote, acepta modelos, salta excluido solo y en lote mixto); `sugerirEmpresa` (mono-rfc, multi-rfc misma, multi-rfc distinta→null, sin mapeo→null, estricto con rfc sin mapeo→null, excluido→null mono y multi); `aplicarASinEmpresa` (asigna unívocos, deja ambiguos, salta grupos con excluido); `rfcsDeGrupo`; tenancy (otro team no entra).
+- **`ClienteEmpresaControllerTest`** (Feature): index render (catálogo + empresas + recurrentes + excluido en payload); cualquier-miembro no-owner; update override; toggle excluido on/off; toggle conserva empresa_id; PATCH parcial no resetea excluido; empresa de otro team → 422; aplicarSugerencias; no fuga cross-team; update de otro team → 404; detección flags/clears mes actual; recurrentes sin empresa para excluido.
+- **`ReconciliationTest`** (extendido): `updateGroupEmpresa` aprende el mapeo; `store` auto-asigna con RFC conocido; `store` deja sin empresa con RFC desconocido; `store` deja sin empresa con RFC excluido; `updateGroupEmpresa` asigna al grupo pero NO re-aprende con RFC excluido.
 - **Sin regresiones** vs baseline (13) en `MatcherServiceTest`/`RegressionTest`/`ReconciliationTest`.
 
 ## 8. Impacto en lo existente

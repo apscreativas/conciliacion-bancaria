@@ -63,7 +63,7 @@ POST /reconciliation
 
 ### Auto-asignación de empresa (aditivo, post-reconcile)
 
-Fuera de la transacción del motor, `store` usa el `group_id` para pre-asignar la empresa del grupo desde el **catálogo cliente→empresa**: `sugerirEmpresa(teamId, rfcs de las facturas)`; si hay sugerencia unívoca → `update(['empresa_id' => ...])` sobre el grupo. RFC desconocido o multi-RFC ambiguo → grupo sin empresa. **No cambia el algoritmo de matching ni los montos.** Ver `docs/business-rules.md` §14.
+Fuera de la transacción del motor, `store` usa el `group_id` para pre-asignar la empresa del grupo desde el **catálogo cliente→empresa**: `sugerirEmpresa(teamId, rfcs de las facturas)`; si hay sugerencia unívoca → `update(['empresa_id' => ...])` sobre el grupo. RFC desconocido, excluido ("respetar etiquetas individuales") o multi-RFC ambiguo → grupo sin empresa. **No cambia el algoritmo de matching ni los montos.** Ver `docs/business-rules.md` §14.
 
 ### Response
 
@@ -121,7 +121,7 @@ POST /reconciliation/batch
 - Valida ownership de cada par.
 - Por cada par: `$groupId = MatcherService::reconcile([inv_id], [mov_id], 'automatico', $movement->fecha)`.
 - Cada par genera un `group_id` UUID distinto (no se agrupan).
-- Auto-asignación (aditiva): con el `group_id` devuelto, `sugerirEmpresa(teamId, [rfc de la factura])`; si hay mapeo → asigna la empresa al grupo (igual que `store`). Ver `docs/business-rules.md` §14.
+- Auto-asignación (aditiva): con el `group_id` devuelto, `sugerirEmpresa(teamId, [rfc de la factura])`; si hay mapeo unívoco (no excluido) → asigna la empresa al grupo (igual que `store`). Ver `docs/business-rules.md` §14.
 
 ---
 
