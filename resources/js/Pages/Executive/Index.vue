@@ -5,28 +5,26 @@ import { ref, computed, onUnmounted } from "vue";
 import { formatCurrency } from "@/utils/format";
 import { trans } from "laravel-vue-i18n";
 import axios from "axios";
-
-interface Pnl {
-    ingresos: { total: number; bancario_conciliado: number; manual: number };
-    costo_venta: number;
-    utilidad_bruta: number;
-    margen_bruto: number;
-    gasto_operativo: number;
-    ebitda: number;
-    margen_ebitda: number;
-    abajo_ebitda: number;
-    sin_clasificar: number;
-    utilidad_neta: number;
-    margen_neto: number;
-    egresos_total: number;
-}
-
-interface EmpresaPnl {
-    id: number;
-    nombre: string;
-    color: string | null;
-    pnl: Pnl;
-}
+import {
+    CHART_COLORS,
+    type Pnl,
+    type EmpresaPnl,
+    type MonthPoint,
+    type IngresoEmpresaMonth,
+    type CategoriaEgreso,
+    type NaturalezaEgreso,
+    type Proveedor,
+    type Nomina,
+} from "./types";
+import KpiCard from "./Partials/KpiCard.vue";
+import TrendChart from "./Partials/TrendChart.vue";
+import MarginTrendChart from "./Partials/MarginTrendChart.vue";
+import EgresosComposition from "./Partials/EgresosComposition.vue";
+import IngresoEmpresaChart from "./Partials/IngresoEmpresaChart.vue";
+import FijoVariableChart from "./Partials/FijoVariableChart.vue";
+import TopProveedores from "./Partials/TopProveedores.vue";
+import NominaRollup from "./Partials/NominaRollup.vue";
+import PnlWaterfall from "./Partials/PnlWaterfall.vue";
 
 const props = defineProps<{
     pnl: Pnl;
@@ -35,11 +33,18 @@ const props = defineProps<{
     porEmpresa: EmpresaPnl[];
     tuChecador: EmpresaPnl | null;
     empresas: Array<{ id: number; nombre: string; color: string | null }>;
+    series: MonthPoint[];
+    ingresoEmpresaSeries: IngresoEmpresaMonth[];
+    egresosPorCategoria: CategoriaEgreso[];
+    egresosPorNaturaleza: NaturalezaEgreso;
+    topProveedores: Proveedor[];
+    nominaRollup: Nomina;
     filters: {
         granularidad: string;
         empresa_id: number | null;
         month: number;
         year: number;
+        months: number;
     };
 }>();
 
@@ -54,6 +59,7 @@ const granularidad = ref(props.filters.granularidad || "mensual");
 const empresaId = ref<string>(
     props.filters.empresa_id != null ? String(props.filters.empresa_id) : "",
 );
+const months = ref<string>(String(props.filters.months || 12));
 
 const granularidades = [
     { value: "mensual", label: "Mensual" },
@@ -68,13 +74,11 @@ const reload = () => {
         {
             granularidad: granularidad.value,
             empresa_id: empresaId.value || undefined,
+            months: months.value,
         },
         { preserveState: true, preserveScroll: true, replace: true },
     );
 };
-
-// Margen (ratio 0..1) → porcentaje string.
-const pct = (ratio: number): string => `${(Number(ratio) * 100).toFixed(1)}%`;
 
 // Delta % entre actual y comparativo (null si el comparativo es 0 → "—").
 const delta = (current: number, base: number): number | null => {
@@ -83,21 +87,27 @@ const delta = (current: number, base: number): number | null => {
     return (Number(current) - b) / Math.abs(b);
 };
 
-interface Kpi {
+interface KpiVm {
     label: string;
     value: number;
     margin: number | null;
     deltaPrev: number | null;
     deltaYoY: number | null;
+    sparkline: number[];
+    color: string;
+    borderClass: string;
 }
 
-const kpis = computed<Kpi[]>(() => [
+const kpis = computed<KpiVm[]>(() => [
     {
         label: "Ingresos",
         value: props.pnl.ingresos.total,
         margin: null,
         deltaPrev: delta(props.pnl.ingresos.total, props.pnlPrev.ingresos.total),
         deltaYoY: delta(props.pnl.ingresos.total, props.pnlYoY.ingresos.total),
+        sparkline: props.series.map((m) => m.ingresos_total),
+        color: CHART_COLORS.ingresos,
+        borderClass: "border-green-500",
     },
     {
         label: "Utilidad bruta",
@@ -105,6 +115,9 @@ const kpis = computed<Kpi[]>(() => [
         margin: props.pnl.margen_bruto,
         deltaPrev: delta(props.pnl.utilidad_bruta, props.pnlPrev.utilidad_bruta),
         deltaYoY: delta(props.pnl.utilidad_bruta, props.pnlYoY.utilidad_bruta),
+        sparkline: props.series.map((m) => m.utilidad_bruta),
+        color: "#0EA5E9",
+        borderClass: "border-sky-500",
     },
     {
         label: "EBITDA",
@@ -112,6 +125,9 @@ const kpis = computed<Kpi[]>(() => [
         margin: props.pnl.margen_ebitda,
         deltaPrev: delta(props.pnl.ebitda, props.pnlPrev.ebitda),
         deltaYoY: delta(props.pnl.ebitda, props.pnlYoY.ebitda),
+        sparkline: props.series.map((m) => m.ebitda),
+        color: CHART_COLORS.utilidad,
+        borderClass: "border-indigo-500",
     },
     {
         label: "Utilidad neta",
@@ -119,51 +135,14 @@ const kpis = computed<Kpi[]>(() => [
         margin: props.pnl.margen_neto,
         deltaPrev: delta(props.pnl.utilidad_neta, props.pnlPrev.utilidad_neta),
         deltaYoY: delta(props.pnl.utilidad_neta, props.pnlYoY.utilidad_neta),
+        sparkline: props.series.map((m) => m.utilidad_neta),
+        color: "#10B981",
+        borderClass: "border-emerald-600",
     },
 ]);
 
-const borderColors = [
-    "border-indigo-500",
-    "border-green-500",
-    "border-blue-500",
-    "border-emerald-600",
-];
-
-// Waterfall del P&L: pasos con tipo (base / resta / subtotal).
-interface Step {
-    label: string;
-    amount: number;
-    kind: "base" | "deduct" | "subtotal";
-}
-
-const steps = computed<Step[]>(() => {
-    const p = props.pnl;
-    const arr: Step[] = [
-        { label: "Ingresos", amount: p.ingresos.total, kind: "base" },
-        { label: "Costo de venta", amount: -p.costo_venta, kind: "deduct" },
-        { label: "Utilidad bruta", amount: p.utilidad_bruta, kind: "subtotal" },
-        { label: "Gasto operativo", amount: -p.gasto_operativo, kind: "deduct" },
-        { label: "EBITDA", amount: p.ebitda, kind: "subtotal" },
-        { label: "Debajo de EBITDA", amount: -p.abajo_ebitda, kind: "deduct" },
-    ];
-    if (Number(p.sin_clasificar) !== 0) {
-        arr.push({ label: "Sin clasificar", amount: -p.sin_clasificar, kind: "deduct" });
-    }
-    arr.push({ label: "Utilidad neta", amount: p.utilidad_neta, kind: "subtotal" });
-    return arr;
-});
-
-const maxAbs = computed(() => {
-    const vals = steps.value.map((s) => Math.abs(s.amount));
-    const m = Math.max(...vals, 1);
-    return m;
-});
-
-const barWidth = (amount: number): string =>
-    `${Math.min(100, (Math.abs(amount) / maxAbs.value) * 100)}%`;
-
-// Margen por empresa: el ancho de la barra ES el margen neto (%), no el ingreso —
-// así la barra refleja lo que dice el título y coincide con el PDF. Negativo → 0.
+// Margen por empresa: el ancho de la barra ES el margen neto (%). Negativo → 0.
+const pct = (ratio: number): string => `${(Number(ratio) * 100).toFixed(1)}%`;
 const empresaBarWidth = (e: EmpresaPnl): string =>
     `${Math.min(100, Math.max(0, Number(e.pnl.margen_neto) * 100))}%`;
 
@@ -191,6 +170,7 @@ const startExport = async () => {
                 empresa_id: empresaId.value || undefined,
                 month: props.filters.month,
                 year: props.filters.year,
+                months: months.value,
             },
         });
 
@@ -223,8 +203,6 @@ const pollExport = (id: number) => {
                         (res.data.error_message || trans("Error desconocido")),
                 );
             } else if (res.data.is_offline) {
-                // Lleva > 2 min en cola: probablemente el worker de exports está caído.
-                // Cortamos el polling y avisamos en vez de sondear indefinidamente.
                 clearActiveInterval();
                 exportProcessing.value = false;
                 showToast(trans("La exportación está tardando. Verifica que el worker de la cola esté activo."));
@@ -265,11 +243,7 @@ const pollExport = (id: number) => {
                             @change="reload"
                             class="block w-full text-sm rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 focus:ring-indigo-500 focus:border-indigo-500"
                         >
-                            <option
-                                v-for="g in granularidades"
-                                :key="g.value"
-                                :value="g.value"
-                            >
+                            <option v-for="g in granularidades" :key="g.value" :value="g.value">
                                 {{ $t(g.label) }}
                             </option>
                         </select>
@@ -285,13 +259,23 @@ const pollExport = (id: number) => {
                             class="block w-full text-sm rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 focus:ring-indigo-500 focus:border-indigo-500"
                         >
                             <option value="">{{ $t("Consolidado") }}</option>
-                            <option
-                                v-for="e in empresas"
-                                :key="e.id"
-                                :value="String(e.id)"
-                            >
+                            <option v-for="e in empresas" :key="e.id" :value="String(e.id)">
                                 {{ e.nombre }}
                             </option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 uppercase mb-1">
+                            {{ $t("Ventana") }}
+                        </label>
+                        <select
+                            v-model="months"
+                            @change="reload"
+                            class="block w-full text-sm rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 focus:ring-indigo-500 focus:border-indigo-500"
+                        >
+                            <option value="6">{{ $t("Últimos 6 meses") }}</option>
+                            <option value="12">{{ $t("Últimos 12 meses") }}</option>
                         </select>
                     </div>
 
@@ -309,123 +293,83 @@ const pollExport = (id: number) => {
                     </div>
                 </div>
 
-                <!-- Tarjetas KPI -->
+                <!-- Tarjetas KPI con sparkline -->
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-                    <div
-                        v-for="(kpi, idx) in kpis"
+                    <KpiCard
+                        v-for="kpi in kpis"
                         :key="kpi.label"
-                        class="bg-white dark:bg-gray-800 overflow-hidden shadow-sm sm:rounded-lg p-6 border-l-4"
-                        :class="borderColors[idx]"
+                        :label="kpi.label"
+                        :valor="kpi.value"
+                        :margen="kpi.margin"
+                        :delta-prev="kpi.deltaPrev"
+                        :delta-yoy="kpi.deltaYoY"
+                        :sparkline="kpi.sparkline"
+                        :color="kpi.color"
+                        :border-class="kpi.borderClass"
+                    />
+                </div>
+
+                <!-- Tendencias -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+                    <TrendChart :series="series" />
+                    <MarginTrendChart :series="series" />
+                </div>
+
+                <!-- Composición de egresos -->
+                <div class="mb-8">
+                    <EgresosComposition :series="series" :categorias="egresosPorCategoria" />
+                </div>
+
+                <!-- Ingreso por empresa + Tu Checador -->
+                <div class="mb-8">
+                    <IngresoEmpresaChart
+                        :ingreso-empresa-series="ingresoEmpresaSeries"
+                        :tu-checador="tuChecador"
+                    />
+                </div>
+
+                <!-- Fijos vs variables + Nómina -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+                    <FijoVariableChart :naturaleza="egresosPorNaturaleza" />
+                    <NominaRollup :nomina="nominaRollup" />
+                </div>
+
+                <!-- Top proveedores + categorías -->
+                <div class="mb-8">
+                    <TopProveedores :proveedores="topProveedores" :categorias="egresosPorCategoria" />
+                </div>
+
+                <!-- Waterfall + Margen por empresa -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <PnlWaterfall :pnl="pnl" />
+
+                    <div
+                        v-if="porEmpresa.length > 0"
+                        class="bg-white dark:bg-gray-800 shadow-sm sm:rounded-lg p-6"
                     >
-                        <div class="text-gray-500 dark:text-gray-400 text-xs font-medium uppercase">
-                            {{ $t(kpi.label) }}
-                        </div>
-                        <div class="mt-2 text-2xl font-bold text-gray-900 dark:text-white">
-                            {{ formatCurrency(kpi.value) }}
-                        </div>
-                        <div v-if="kpi.margin !== null" class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                            {{ $t("Margen") }}: {{ pct(kpi.margin) }}
-                        </div>
-                        <div class="mt-3 flex flex-col gap-1 text-xs">
-                            <span :class="kpi.deltaPrev === null ? 'text-gray-400' : (kpi.deltaPrev >= 0 ? 'text-green-600' : 'text-red-600')">
-                                <template v-if="kpi.deltaPrev === null">—</template>
-                                <template v-else>{{ kpi.deltaPrev >= 0 ? "↑" : "↓" }} {{ pct(Math.abs(kpi.deltaPrev)) }}</template>
-                                <span class="text-gray-400 dark:text-gray-500"> {{ $t("vs periodo anterior") }}</span>
-                            </span>
-                            <span :class="kpi.deltaYoY === null ? 'text-gray-400' : (kpi.deltaYoY >= 0 ? 'text-green-600' : 'text-red-600')">
-                                <template v-if="kpi.deltaYoY === null">—</template>
-                                <template v-else>{{ kpi.deltaYoY >= 0 ? "↑" : "↓" }} {{ pct(Math.abs(kpi.deltaYoY)) }}</template>
-                                <span class="text-gray-400 dark:text-gray-500"> {{ $t("vs año anterior") }}</span>
-                            </span>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Tarjeta Tu Checador -->
-                <div
-                    v-if="tuChecador"
-                    class="bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-sm sm:rounded-lg p-6 mb-8"
-                >
-                    <div class="flex items-center justify-between">
-                        <div>
-                            <div class="text-xs font-medium uppercase opacity-80">
-                                {{ $t("Ingreso recurrente") }} · {{ tuChecador.nombre }}
-                            </div>
-                            <div class="mt-2 text-3xl font-bold">
-                                {{ formatCurrency(tuChecador.pnl.ingresos.total) }}
-                            </div>
-                        </div>
-                        <div class="text-right">
-                            <div class="text-xs uppercase opacity-80">{{ $t("Utilidad neta") }}</div>
-                            <div class="text-xl font-bold">{{ formatCurrency(tuChecador.pnl.utilidad_neta) }}</div>
-                            <div class="text-xs opacity-80">{{ $t("Margen") }}: {{ pct(tuChecador.pnl.margen_neto) }}</div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Waterfall P&L -->
-                <div class="bg-white dark:bg-gray-800 shadow-sm sm:rounded-lg p-6 mb-8">
-                    <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4">
-                        {{ $t("Estado de Resultados") }}
-                    </h3>
-                    <div class="space-y-3">
-                        <div
-                            v-for="step in steps"
-                            :key="step.label"
-                            class="flex items-center gap-4"
-                        >
-                            <div class="w-40 text-sm shrink-0"
-                                :class="step.kind === 'subtotal' ? 'font-bold text-gray-900 dark:text-white' : 'text-gray-600 dark:text-gray-400'"
-                            >
-                                {{ $t(step.label) }}
-                            </div>
-                            <div class="flex-1 bg-gray-100 dark:bg-gray-700 rounded h-6 relative overflow-hidden">
-                                <div
-                                    class="h-6 rounded"
-                                    :class="step.kind === 'deduct' ? 'bg-red-400' : (step.kind === 'subtotal' ? 'bg-indigo-600' : 'bg-green-500')"
-                                    :style="{ width: barWidth(step.amount) }"
-                                ></div>
-                            </div>
-                            <div class="w-32 text-right text-sm font-semibold shrink-0"
-                                :class="step.amount < 0 ? 'text-red-600' : 'text-gray-900 dark:text-white'"
-                            >
-                                {{ formatCurrency(step.amount) }}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Margen por empresa -->
-                <div
-                    v-if="porEmpresa.length > 0"
-                    class="bg-white dark:bg-gray-800 shadow-sm sm:rounded-lg p-6"
-                >
-                    <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4">
-                        {{ $t("Margen por empresa") }}
-                    </h3>
-                    <div class="space-y-4">
-                        <div
-                            v-for="e in porEmpresa"
-                            :key="e.id"
-                            class="flex items-center gap-4"
-                        >
-                            <div class="w-40 text-sm shrink-0 flex items-center gap-2 text-gray-700 dark:text-gray-300">
-                                <span
-                                    class="inline-block w-3 h-3 rounded-full shrink-0"
-                                    :style="{ background: e.color || '#94A3B8' }"
-                                ></span>
-                                <span class="truncate">{{ e.nombre }}</span>
-                            </div>
-                            <div class="flex-1 bg-gray-100 dark:bg-gray-700 rounded h-6 overflow-hidden">
-                                <div
-                                    class="h-6 rounded flex items-center justify-end pr-2 text-xs text-white font-medium"
-                                    :style="{ background: e.color || '#3B82F6', width: empresaBarWidth(e) }"
-                                >
-                                    {{ pct(e.pnl.margen_neto) }}
+                        <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4">
+                            {{ $t("Margen por empresa") }}
+                        </h3>
+                        <div class="space-y-4">
+                            <div v-for="e in porEmpresa" :key="e.id" class="flex items-center gap-4">
+                                <div class="w-40 text-sm shrink-0 flex items-center gap-2 text-gray-700 dark:text-gray-300">
+                                    <span
+                                        class="inline-block w-3 h-3 rounded-full shrink-0"
+                                        :style="{ background: e.color || '#94A3B8' }"
+                                    ></span>
+                                    <span class="truncate">{{ e.nombre }}</span>
                                 </div>
-                            </div>
-                            <div class="w-32 text-right text-sm font-semibold text-gray-900 dark:text-white shrink-0">
-                                {{ formatCurrency(e.pnl.ingresos.total) }}
+                                <div class="flex-1 bg-gray-100 dark:bg-gray-700 rounded h-6 overflow-hidden">
+                                    <div
+                                        class="h-6 rounded flex items-center justify-end pr-2 text-xs text-white font-medium"
+                                        :style="{ background: e.color || '#3B82F6', width: empresaBarWidth(e) }"
+                                    >
+                                        {{ pct(e.pnl.margen_neto) }}
+                                    </div>
+                                </div>
+                                <div class="w-32 text-right text-sm font-semibold text-gray-900 dark:text-white shrink-0">
+                                    {{ formatCurrency(e.pnl.ingresos.total) }}
+                                </div>
                             </div>
                         </div>
                     </div>
