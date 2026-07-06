@@ -3,12 +3,15 @@
 namespace App\Http\Controllers;
 
 use App\Models\Tolerancia;
+use App\Policies\Concerns\ChecksTeamOwnership;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Redirect;
 use Inertia\Inertia;
 
 class ToleranciaController extends Controller
 {
+    use ChecksTeamOwnership;
+
     /**
      * Show the form for editing the tolerance.
      */
@@ -17,9 +20,9 @@ class ToleranciaController extends Controller
         $user = $request->user();
         $team = $user->currentTeam;
 
-        // Authorization: Check if user owns the current team
-        if ($user->id !== $team->user_id) {
-            abort(403, 'Solo el propietario del equipo puede configurar la tolerancia.');
+        // Authorization: dueño del team o miembro con rol 'admin'.
+        if (! $this->managesCurrentTeam($user)) {
+            abort(403, 'Solo el propietario o un admin del equipo puede configurar la tolerancia.');
         }
 
         // Get or create tolerance for this team
@@ -46,7 +49,7 @@ class ToleranciaController extends Controller
         $user = $request->user();
         $team = $user->currentTeam;
 
-        if ($user->id !== $team->user_id) {
+        if (! $this->managesCurrentTeam($user)) {
             abort(403, 'Unauthorized action.');
         }
 
