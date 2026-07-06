@@ -689,7 +689,7 @@ onMounted(() => {
             <header
                 class="flex items-center justify-between h-16 px-6 bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700"
             >
-                <div class="flex items-center">
+                <div class="flex items-center flex-1 min-w-0">
                     <!-- Hamburger Button (Mobile) -->
                     <button
                         @click="
@@ -713,8 +713,9 @@ onMounted(() => {
                             />
                         </svg>
                     </button>
-                    <!-- Page Header Slot -->
-                    <div class="ml-4 lg:ml-0">
+                    <!-- Page Header Slot: flex-1 para que el justify-between de cada
+                         página (título izq / botón der) tenga todo el ancho del header. -->
+                    <div class="ml-4 lg:ml-0 flex-1 min-w-0">
                         <slot name="header" />
                     </div>
                 </div>
