@@ -147,24 +147,29 @@ Test: `SecurityAuditTest.php` "bootstrap includes session expiration interceptor
 No hay Policies extensivas — la protección vive en controllers. El único Policy es `TeamPolicy::update` (verificado con `ownsTeam`). Otras verificaciones explícitas:
 
 - `BankFormatController::edit/update/destroy` — check `team_id` + abort 403.
-- `ToleranciaController::edit/update` — check `user_id === team.user_id`, abort 403.
+- `ToleranciaController::edit/update` — `managesCurrentTeam` (owner o rol `admin`), abort 403.
 - `TeamController::update` — `$this->authorize('update', $team)` + check explícito (redundante pero defensivo).
 - `TeamMemberController::store/destroy` — check owner del team, o self-remove.
 - `ReconciliationController::store/batch` — ownership de cada ID.
 - `ReconciliationController::downloadExport/checkExportStatus` — `user_id === auth::id()` (no basta con estar en el team).
-- `EmpresaPolicy`/`CategoriaPolicy` (Finanzas Fase 0, auto-descubiertas) — `viewAny` cualquier miembro; `create/update/delete` solo owner del team.
-- `EmpleadoPolicy` (Finanzas Fase 3B, auto-descubierta) — **solo owner del team en TODAS las habilidades**, incluidas `viewAny`/`view`. Justificación: el módulo Empleados expone **salarios** (fiscal y real), información sensible que no debe ver cualquier miembro del team. Un no-owner recibe **403** tanto en lectura como en mutación. (En contraste, la captura operativa de egresos manuales y recurrentes sigue siendo accesible a cualquier miembro del team.) Tests: `tests/Feature/EmpleadoTest.php`.
-- `ExecutiveController` (Finanzas Fase 6, dashboard ejecutivo `/executive` + trío de export) — **solo owner del team** vía `App\Policies\Concerns\ChecksTeamOwnership::ownsCurrentTeam`. Cada método (`index`, `export`, `checkExportStatus`, `downloadExport`) abre con `abort_unless($this->ownsCurrentTeam($request->user()), 403)`. Justificación: es la vista de liderazgo (P&L consolidado y por empresa, márgenes, costo de nómina) — información financiera del grupo que no debe ver cualquier miembro. Un no-owner recibe **403** en pantalla y en export. El `SidebarLink` de "Dashboard ejecutivo" en `AuthenticatedLayout` está condicionado a owner (`current_team.user_id === auth.user.id`), así que un no-owner ni lo ve. Además, `checkExportStatus`/`downloadExport` exigen `user_id === auth::id()` (no basta con ser owner del team). Tests: `tests/Feature/ExecutiveControllerTest.php`.
+- `EmpresaPolicy`/`CategoriaPolicy` (Finanzas Fase 0, auto-descubiertas) — `viewAny` cualquier miembro; `create/update/delete` owner o admin (`managesCurrentTeam`).
+- `EmpleadoPolicy` (Finanzas Fase 3B, auto-descubierta) — **owner o admin en TODAS las habilidades**, incluidas `viewAny`/`view`. Justificación: el módulo Empleados expone **salarios** (fiscal y real), información sensible que no debe ver cualquier miembro del team. Un miembro sin rol admin recibe **403** tanto en lectura como en mutación. (En contraste, la captura operativa de egresos manuales y recurrentes sigue siendo accesible a cualquier miembro del team.) Tests: `tests/Feature/EmpleadoTest.php`, `tests/Feature/TeamAdminRoleTest.php`.
+- `ExecutiveController` (Finanzas Fase 6, dashboard ejecutivo `/executive` + trío de export) — **owner o admin** vía `App\Policies\Concerns\ChecksTeamOwnership::managesCurrentTeam`. Cada método (`index`, `export`, `checkExportStatus`, `downloadExport`) abre con `abort_unless($this->managesCurrentTeam($request->user()), 403)`. Justificación: es la vista de liderazgo (P&L consolidado y por empresa, márgenes, costo de nómina) — información financiera del grupo que no debe ver cualquier miembro. Un miembro sin rol admin recibe **403** en pantalla y en export. El `SidebarLink` de "Dashboard ejecutivo" en `AuthenticatedLayout` está condicionado al prop compartido `auth.user.manages_team`, así que quien no administre ni lo ve. Además, `checkExportStatus`/`downloadExport` exigen `user_id === auth::id()` (no basta con administrar el team). Tests: `tests/Feature/ExecutiveControllerTest.php`, `tests/Feature/TeamAdminRoleTest.php`.
+
+### Rol `admin` del team (owner-equivalente financiero)
+
+La columna `team_user.role` acepta `'admin'` además de `'member'`. Un admin es **owner-equivalente** en los módulos financieros: pasa todos los checks `managesCurrentTeam` (`User::managesTeam` = dueño O rol pivot `admin`). Lo que **NO** puede hacer un admin (sigue siendo solo del dueño, `ownsTeam`): renombrar el team (`TeamPolicy::update`), invitar/quitar miembros (`TeamMemberController`). El rol se asigna con `php artisan team:member-role {email} admin` (ver `docs/operations.md`); las invitaciones siguen creando `member` por defecto. Caso de uso: el CEO/fundador ve el dashboard ejecutivo, empleados y tolerancia sin ser el owner operativo.
 
 ### Módulos solo-owner vs. cualquier miembro
 
 | Módulo | Lectura (`viewAny`/`view`) | Mutación (`create`/`update`/`delete`) |
 |---|---|---|
-| Empresas, Categorías | Cualquier miembro | Solo owner |
+| Empresas, Categorías | Cualquier miembro | Owner o admin |
 | Egresos, Egresos recurrentes | Cualquier miembro | Cualquier miembro |
-| **Empleados** (salarios sensibles) | **Solo owner** | **Solo owner** |
-| **Dashboard ejecutivo** (`/executive` + export P&L) | **Solo owner** | **Solo owner** (export) |
-| Tolerancia | Solo owner | Solo owner |
+| **Empleados** (salarios sensibles) | **Owner o admin** | **Owner o admin** |
+| **Dashboard ejecutivo** (`/executive` + export P&L) | **Owner o admin** | **Owner o admin** (export) |
+| Tolerancia | Owner o admin | Owner o admin |
+| Gestión del team (renombrar, miembros) | — | **Solo owner** |
 
 ---
 

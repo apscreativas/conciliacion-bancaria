@@ -25,16 +25,16 @@ class EmpresaPolicy
 
     public function create(User $user): bool
     {
-        return $this->ownsCurrentTeam($user);
+        return $this->managesCurrentTeam($user);
     }
 
     public function update(User $user, Empresa $empresa): bool
     {
-        return $this->ownsCurrentTeam($user) && $empresa->team_id === $user->current_team_id;
+        return $this->managesCurrentTeam($user) && $empresa->team_id === $user->current_team_id;
     }
 
     public function delete(User $user, Empresa $empresa): bool
     {
-        return $this->ownsCurrentTeam($user) && $empresa->team_id === $user->current_team_id;
+        return $this->managesCurrentTeam($user) && $empresa->team_id === $user->current_team_id;
     }
 }

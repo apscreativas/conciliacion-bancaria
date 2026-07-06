@@ -12,26 +12,26 @@ class EmpleadoPolicy
 
     public function viewAny(User $user): bool
     {
-        return $this->ownsCurrentTeam($user);
+        return $this->managesCurrentTeam($user);
     }
 
     public function view(User $user, Empleado $empleado): bool
     {
-        return $this->ownsCurrentTeam($user) && $empleado->team_id === $user->current_team_id;
+        return $this->managesCurrentTeam($user) && $empleado->team_id === $user->current_team_id;
     }
 
     public function create(User $user): bool
     {
-        return $this->ownsCurrentTeam($user);
+        return $this->managesCurrentTeam($user);
     }
 
     public function update(User $user, Empleado $empleado): bool
     {
-        return $this->ownsCurrentTeam($user) && $empleado->team_id === $user->current_team_id;
+        return $this->managesCurrentTeam($user) && $empleado->team_id === $user->current_team_id;
     }
 
     public function delete(User $user, Empleado $empleado): bool
     {
-        return $this->ownsCurrentTeam($user) && $empleado->team_id === $user->current_team_id;
+        return $this->managesCurrentTeam($user) && $empleado->team_id === $user->current_team_id;
     }
 }

@@ -18,7 +18,8 @@ use Inertia\Response;
 /**
  * Dashboard ejecutivo del Estado de Resultados (Finanzas Fase 6).
  *
- * Vista de liderazgo: SOLO el dueño del team la ve (`ownsCurrentTeam`). Consume
+ * Vista de liderazgo: la ven el dueño del team y los miembros con rol 'admin'
+ * (`managesCurrentTeam`). Consume
  * `ProfitLossService` (con `team_id` explícito, defense-in-depth) y `PeriodResolver`
  * para armar KPIs, comparativos (periodo anterior + YoY) y margen por empresa.
  * El export PDF asíncrono espeja el patrón de `ReconciliationController`.
@@ -36,7 +37,7 @@ class ExecutiveController extends Controller
 
     public function index(Request $request, PeriodResolver $resolver, ProfitLossService $pl, FinanceAnalyticsService $analytics): Response
     {
-        abort_unless($this->ownsCurrentTeam($request->user()), 403);
+        abort_unless($this->managesCurrentTeam($request->user()), 403);
 
         $teamId = $request->user()->current_team_id;
 
@@ -113,7 +114,7 @@ class ExecutiveController extends Controller
 
     public function export(Request $request)
     {
-        abort_unless($this->ownsCurrentTeam($request->user()), 403);
+        abort_unless($this->managesCurrentTeam($request->user()), 403);
 
         $request->validate([
             'granularidad' => 'nullable|in:mensual,trimestral,semestral,anual',
@@ -162,7 +163,7 @@ class ExecutiveController extends Controller
 
     public function checkExportStatus(Request $request, $id)
     {
-        abort_unless($this->ownsCurrentTeam($request->user()), 403);
+        abort_unless($this->managesCurrentTeam($request->user()), 403);
 
         $exportRequest = ExportRequest::where('team_id', $request->user()->current_team_id)
             ->findOrFail($id);
@@ -186,7 +187,7 @@ class ExecutiveController extends Controller
 
     public function downloadExport(Request $request, $id)
     {
-        abort_unless($this->ownsCurrentTeam($request->user()), 403);
+        abort_unless($this->managesCurrentTeam($request->user()), 403);
 
         $exportRequest = ExportRequest::where('team_id', $request->user()->current_team_id)
             ->findOrFail($id);

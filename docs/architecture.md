@@ -99,6 +99,7 @@ Registrado en `bootstrap/app.php:14-18` (append al grupo web):
     "user": {
       "id", "name", "email", "current_team_id", "profile_photo_url",
       "current_team": { "id", "name", "user_id", "personal_team" },
+      "manages_team": true,
       "all_teams": [ ... ]
     }
   },
@@ -111,6 +112,8 @@ Registrado en `bootstrap/app.php:14-18` (append al grupo web):
 ```
 
 `available_years` se calcula consultando `YEAR(fecha_emision)` de facturas y `YEAR(fecha)` de movimientos del team actual, más el año en curso.
+
+`manages_team` = el usuario es dueño del team actual **o** miembro con rol `admin` en `team_user` (`User::managesTeam`); el sidebar lo usa para mostrar los módulos owner/admin (dashboard ejecutivo, empleados, tolerancia, settings). Ver `docs/security.md` §11.
 
 ---
 

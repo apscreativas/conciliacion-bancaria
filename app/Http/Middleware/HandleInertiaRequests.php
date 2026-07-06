@@ -69,6 +69,11 @@ class HandleInertiaRequests extends Middleware
                         'current_team' => $request->user()->currentTeam
                             ? $request->user()->currentTeam->only(['id', 'name', 'user_id', 'personal_team'])
                             : null,
+                        // Owner o miembro con rol 'admin' del team actual: el sidebar
+                        // usa este flag para los módulos owner/admin (ejecutivo,
+                        // empleados, tolerancia, settings).
+                        'manages_team' => $request->user()->currentTeam !== null
+                            && $request->user()->managesTeam($request->user()->currentTeam),
                         'all_teams' => $request->user()->allTeams()->values()->all(),
                     ]
                 ) : null,
