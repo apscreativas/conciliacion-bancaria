@@ -116,6 +116,37 @@ class User extends Authenticatable
     }
 
     /**
+     * Rol del usuario en el team dado: 'owner' si es el dueño, el rol del pivot
+     * `team_user` ('admin'|'member') si es miembro, o null si no pertenece.
+     *
+     * @param  mixed  $team
+     */
+    public function teamRole($team): ?string
+    {
+        if ($this->ownsTeam($team)) {
+            return 'owner';
+        }
+
+        $membership = $this->teams->firstWhere('id', $team->id);
+
+        return $membership?->pivot?->role;
+    }
+
+    /**
+     * El usuario administra el team: es el dueño O tiene rol 'admin' en el pivot.
+     * Los checks "solo owner" de la app (dashboard ejecutivo, empleados,
+     * tolerancia, mutaciones de empresas/categorías) usan esta noción para que
+     * un admin (ej. el CEO) vea/opere igual que el dueño. La gestión del team
+     * en sí (invitar/quitar miembros, renombrar) sigue siendo solo del dueño.
+     *
+     * @param  mixed  $team
+     */
+    public function managesTeam($team): bool
+    {
+        return $this->ownsTeam($team) || $this->teamRole($team) === 'admin';
+    }
+
+    /**
      * Switch the user's context to the given team.
      *
      * @param  mixed  $team

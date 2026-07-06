@@ -167,7 +167,7 @@ onMounted(() => {
 
                 <!-- Dashboard ejecutivo (solo owner del team) -->
                 <SidebarLink
-                    v-if="$page.props.auth.user.current_team && $page.props.auth.user.current_team.user_id === $page.props.auth.user.id"
+                    v-if="$page.props.auth.user.manages_team"
                     :href="route('executive')"
                     :active="route().current('executive')"
                 >
@@ -388,7 +388,7 @@ onMounted(() => {
                         {{ $t('Formatos Bancarios') }}
                     </SidebarLink>
                     <SidebarLink
-                        v-if="$page.props.auth.user.current_team && $page.props.auth.user.current_team.user_id === $page.props.auth.user.id"
+                        v-if="$page.props.auth.user.manages_team"
                         :href="route('settings.tolerance')"
                         :active="route().current('settings.tolerance')"
                     >
@@ -416,7 +416,7 @@ onMounted(() => {
                         {{ $t('Tolerancia') }}
                     </SidebarLink>
                     <SidebarLink
-                        v-if="$page.props.auth.user.current_team && $page.props.auth.user.current_team.user_id === $page.props.auth.user.id"
+                        v-if="$page.props.auth.user.manages_team"
                         :href="route('settings.companies.index')"
                         :active="route().current('settings.companies.*')"
                     >
@@ -428,7 +428,7 @@ onMounted(() => {
                         {{ $t('Empresas') }}
                     </SidebarLink>
                     <SidebarLink
-                        v-if="$page.props.auth.user.current_team && $page.props.auth.user.current_team.user_id === $page.props.auth.user.id"
+                        v-if="$page.props.auth.user.manages_team"
                         :href="route('settings.categories.index')"
                         :active="route().current('settings.categories.*')"
                     >
@@ -440,7 +440,7 @@ onMounted(() => {
                         {{ $t('Categorías') }}
                     </SidebarLink>
                     <SidebarLink
-                        v-if="$page.props.auth.user.current_team && $page.props.auth.user.current_team.user_id === $page.props.auth.user.id"
+                        v-if="$page.props.auth.user.manages_team"
                         :href="route('employees.index')"
                         :active="route().current('employees.*')"
                     >

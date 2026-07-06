@@ -187,6 +187,22 @@ php artisan nomina:generar                       # genera la ventana móvil
 php artisan nomina:generar --month=2026-06       # backfill de un mes concreto
 ```
 
+### `team:member-role`
+
+**Archivo**: `app/Console/Commands/SetTeamMemberRole.php`
+
+Asigna el rol `admin` o `member` a un **miembro** de un team (columna `team_user.role`). El rol `admin` es **owner-equivalente para los módulos financieros** (dashboard ejecutivo, empleados, tolerancia, mutaciones de empresas/categorías — ver `docs/security.md` §11); NO otorga gestión del team (renombrar/invitar sigue siendo del dueño).
+
+- El rol `owner` **no** se asigna por aquí: el dueño lo define `teams.user_id`. Intentarlo → error.
+- Si el usuario pertenece a **varios** teams, exige `--team=ID` (lista las opciones).
+- El dueño de un team no tiene fila pivot en su propio team → no gestionable por comando (ya tiene acceso total).
+- Las invitaciones (`TeamMemberController`) siguen creando `member` por defecto; subir a `admin` es un acto deliberado vía este comando.
+
+```bash
+php artisan team:member-role ceo@empresa.com admin     # dar acceso total financiero
+php artisan team:member-role ceo@empresa.com member    # revertir a miembro operativo
+```
+
 ---
 
 ## Scheduler
