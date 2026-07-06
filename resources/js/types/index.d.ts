@@ -24,6 +24,9 @@ export interface User {
         user_id: number;
         name: string;
     };
+    // Owner del team actual o miembro con rol 'admin' (shared prop de
+    // HandleInertiaRequests); el sidebar lo usa para los módulos owner/admin.
+    manages_team?: boolean;
     teams?: Array<{
         id: number;
         user_id: number;
