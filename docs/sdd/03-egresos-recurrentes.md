@@ -14,7 +14,7 @@ Que gastos fijos (servidores, suscripciones) **se registren solos** cada periodo
 - `egresos.egreso_recurrente_id` (FK nullable, **nullOnDelete** — borrar plantilla no borra egresos generados).
 
 ## 4. Lógica del generador (lo crítico)
-`RecurrenceCalculator`: `firstOccurrence`, `nextDate` (avanza +1/2/3/12 meses con `addMonthsNoOverflow` y re-fija el día nominal, clamp al mes), `applyDiaHabil` (fin de semana → hábil anterior/siguiente).
+`RecurrenceCalculator`: `firstOccurrence` (día `dia_del_mes` del **mes de `fecha_inicio`**, clamp al mes — **puede ser anterior a `fecha_inicio`**, ver §6), `onOrAfter` (primera fecha programada ≥ ancla; solo para reactivación), `nextDate` (avanza +1/2/3/12 meses con `addMonthsNoOverflow` y re-fija el día nominal, clamp al mes), `applyDiaHabil` (fin de semana → hábil anterior/siguiente).
 
 `GenerarEgresosRecurrentes` (`egresos:generar-recurrentes {--dry-run}`): por cada plantilla `due()` (todos los teams, sin Auth), **loop catch-up** (tope 24) mientras `proxima_generacion <= hoy` y vigencia lo permita:
 1. fecha de pago = `applyDiaHabil(proxima_generacion, ajuste)`.
@@ -37,12 +37,13 @@ Schedule: `routes/console.php` → `Schedule::command(...)->dailyAt('01:00')->wi
 - **Día hábil:** fin de semana → hábil anterior/siguiente (sin festivos).
 - **Vigencia:** `num_pagos` corta al llegar a N; `hasta_fecha` corta cuando la próxima excede `fecha_fin`; ambas marcan `activo=false`.
 - **Tenancy:** el comando setea `team_id` explícito (sin Auth, el global scope no aplica); el CRUD usa `TeamOwned` + `ensureOwnTeam` (404/422 cross-team).
-- **`update`** recomputa `proxima_generacion` si `pagos_generados==0` (re-agenda según el nuevo schedule) **o** al **reactivar** una plantilla con historial (`activo` false→true): en ese caso ancla en `max(fecha_inicio, hoy)` para **reanudar desde hoy** y no disparar una avalancha de egresos retroactivos.
+- **Primera ocurrencia retroactiva (2026-07-23):** el primer egreso es el del día `dia_del_mes` del **mes de `fecha_inicio`**, aunque ese día ya haya pasado al capturar la plantilla (ej. renta día 10 capturada el 15-jul → genera el 10-jul en la siguiente corrida vía catch-up). La fecha del primer egreso **puede ser anterior a `fecha_inicio`** — es intencional, no lo "corrijas": decisión de negocio de Juan (un gasto del mes en curso es real aunque se capture tarde). Cuenta para `num_pagos` como cualquier periodo.
+- **`update`** recomputa `proxima_generacion` si `pagos_generados==0` (re-agenda con `firstOccurrence` desde `fecha_inicio`, retroactivo permitido: una plantilla sin pagos debe su calendario completo — esta rama tiene precedencia aunque además se esté reactivando) **o** al **reactivar** una plantilla con historial (`activo` false→true): en ese caso usa `onOrAfter(max(fecha_inicio, hoy))` para **reanudar desde hoy** y no disparar una avalancha de egresos retroactivos.
 
 ## 7. Plan de pruebas
-- **Unit `RecurrenceCalculatorTest`:** `nextDate` por frecuencia, clamp y recuperación de día, `applyDiaHabil` (fin de semana → hábil).
+- **Unit `RecurrenceCalculatorTest`:** `nextDate` por frecuencia, clamp y recuperación de día, `applyDiaHabil` (fin de semana → hábil); `firstOccurrence` retroactiva dentro del mes de inicio + clamp en mes corto; `onOrAfter` conserva la semántica sin retroactivos (mensual y bimestral).
 - **Feature `GenerarEgresosRecurrentesTest`** (con `Carbon::setTestNow`): genera una vez + **idempotencia** en re-corrida; **catch-up** (2 periodos atrasados → 3 egresos); vigencia `num_pagos`/`hasta_fecha` (corta + `activo=false`); **día hábil** (sábado → viernes); multi-team (team_id correcto); `--dry-run` no persiste ni avanza. Hardening: **índice único** `(egreso_recurrente_id, fecha)` rechaza duplicados; periodo preexistente **cuenta** para `num_pagos` sin duplicar; `habil_siguiente` que cruza el mes **no** genera después de `fecha_fin`.
-- **Feature `EgresoRecurrenteTest`:** CRUD (miembro del team) + validación (monto>0, categoría tipo=egreso, quincenal rechazada, reglas condicionales de vigencia) + tenancy 404 + **reactivación** reancla `proxima_generacion` en hoy.
+- **Feature `EgresoRecurrenteTest`:** CRUD (miembro del team) + validación (monto>0, categoría tipo=egreso, quincenal rechazada, reglas condicionales de vigencia) + tenancy 404 + **reactivación** con historial reancla `proxima_generacion` en hoy + **plantilla capturada después del día de pago** genera el egreso del mes en curso end-to-end + reactivación con `pagos_generados=0` recalcula desde `fecha_inicio` (retroactivo).
 
 ## 8. Impacto en lo existente
 - Migraciones aditivas; comando + schedule nuevos; rutas/páginas nuevas; botón en Egresos. **No toca** conciliación/matcher.

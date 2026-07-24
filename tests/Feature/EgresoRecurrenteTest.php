@@ -41,8 +41,40 @@ it('lets a team member create a template and computes proxima_generacion', funct
     $plantilla = EgresoRecurrente::withoutGlobalScopes()->where('descripcion', 'Servidor cloud')->first();
     expect($plantilla->user_id)->toBe($member->id);
     expect($plantilla->pagos_generados)->toBe(0);
-    // primera ocurrencia: día 1 ya pasó en junio (inicio el 10) → 2026-07-01
-    expect($plantilla->proxima_generacion->toDateString())->toBe('2026-07-01');
+    // primera ocurrencia: día 1 del mes de inicio, retroactiva aunque el día ya pasó → 2026-06-01
+    expect($plantilla->proxima_generacion->toDateString())->toBe('2026-06-01');
+});
+
+it('generates the current-month expense when the template is created after its payment day', function () {
+    // Caso real: renta con día 10 capturada el 15 de julio → el egreso del 10-jul debe generarse
+    Carbon::setTestNow('2026-07-15');
+    $user = User::factory()->create();
+    $cat = catEgreso($user->current_team_id);
+
+    actingAs($user)->post(route('recurring-expenses.store'), [
+        'descripcion' => 'Renta Oficina',
+        'monto' => 10000,
+        'categoria_id' => $cat->id,
+        'frecuencia' => 'mensual',
+        'dia_del_mes' => 10,
+        'ajuste_dia_habil' => 'ninguno',
+        'fecha_inicio' => '2026-07-15',
+        'vigencia_tipo' => 'indefinida',
+        'activo' => true,
+    ])->assertRedirect(route('recurring-expenses.index'));
+
+    $plantilla = EgresoRecurrente::withoutGlobalScopes()->where('descripcion', 'Renta Oficina')->first();
+    expect($plantilla->proxima_generacion->toDateString())->toBe('2026-07-10');
+
+    $this->artisan('egresos:generar-recurrentes')->assertSuccessful();
+
+    $plantilla->refresh();
+    expect($plantilla->pagos_generados)->toBe(1);
+    expect($plantilla->proxima_generacion->toDateString())->toBe('2026-08-10');
+    expect(\App\Models\Egreso::withoutGlobalScopes()
+        ->where('egreso_recurrente_id', $plantilla->id)
+        ->whereDate('fecha', '2026-07-10')
+        ->exists())->toBeTrue();
 });
 
 it('rejects monto <= 0, a missing categoria, and an ingreso categoria', function () {
@@ -104,6 +136,30 @@ it('on reactivation resumes proxima_generacion from today, not the stale past da
     expect($t->activo)->toBeTrue();
     // No reanuda desde 2026-03-01 (vencido) → no inunda con egresos retroactivos.
     expect($t->proxima_generacion->toDateString())->toBe('2026-07-01');
+});
+
+it('on reactivation without generated payments recalculates from fecha_inicio (retroactive allowed)', function () {
+    // Una plantilla que nunca generó nada debe su calendario completo desde fecha_inicio:
+    // la rama pagos_generados === 0 tiene precedencia sobre la rama de reactivación.
+    Carbon::setTestNow('2026-06-15');
+    $user = User::factory()->create();
+    $cat = catEgreso($user->current_team_id);
+    $t = EgresoRecurrente::factory()->create([
+        'team_id' => $user->current_team_id, 'user_id' => $user->id, 'categoria_id' => $cat->id,
+        'frecuencia' => 'mensual', 'dia_del_mes' => 10, 'ajuste_dia_habil' => 'ninguno',
+        'fecha_inicio' => '2026-03-05', 'vigencia_tipo' => 'indefinida',
+        'pagos_generados' => 0, 'activo' => false, 'proxima_generacion' => '2026-03-10',
+    ]);
+
+    actingAs($user)->put(route('recurring-expenses.update', $t->id), [
+        'descripcion' => $t->descripcion, 'monto' => $t->monto, 'categoria_id' => $cat->id,
+        'frecuencia' => 'mensual', 'dia_del_mes' => 10, 'ajuste_dia_habil' => 'ninguno',
+        'fecha_inicio' => '2026-03-05', 'vigencia_tipo' => 'indefinida',
+        'activo' => true,
+    ])->assertRedirect(route('recurring-expenses.index'));
+
+    $t->refresh();
+    expect($t->proxima_generacion->toDateString())->toBe('2026-03-10');
 });
 
 it('denies access to a template from another team (404)', function () {

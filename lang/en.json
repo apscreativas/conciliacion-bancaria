@@ -80,6 +80,8 @@
     "Día hábil anterior": "Previous business day",
     "Día hábil siguiente": "Next business day",
     "Fecha de inicio": "Start date",
+    "Primer egreso": "First expense",
+    "puede ajustarse a día hábil": "may shift to a business day",
     "Vigencia": "Validity",
     "Indefinida": "Indefinite",
     "Hasta :fecha": "Until :fecha",
