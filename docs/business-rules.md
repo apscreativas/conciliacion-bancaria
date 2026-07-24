@@ -344,6 +344,19 @@ Cada método del servicio recibe `teamId` explícito y aísla lectura/escritura 
 
 ---
 
+## 15. Egresos recurrentes (Finanzas Fase 3)
+
+Plantillas (`egresos_recurrentes`) que el comando diario `egresos:generar-recurrentes` (01:00, requiere el cron maestro `schedule:run` en prod) convierte en filas de `egresos` (`origen='recurrente'`).
+
+- **Primera ocurrencia retroactiva (2026-07-23):** el primer egreso es el del día `dia_del_mes` del **mes de `fecha_inicio`**, aunque la plantilla se capture después de ese día (renta día 10 capturada el 15-jul → el egreso del 10-jul se genera en la siguiente corrida). La fecha del primer egreso **puede ser anterior a `fecha_inicio`** — intencional (el gasto del mes en curso es real aunque se capture tarde); cuenta para `num_pagos`.
+- **Catch-up:** el comando genera todos los periodos con `proxima_generacion <= hoy` (tope 24 por corrida); no correr el cron un día no pierde periodos.
+- **Reactivación:** una plantilla pausada **con historial** (`pagos_generados > 0`) reanuda desde hoy (`onOrAfter`, sin avalancha retroactiva); una **sin pagos generados** recalcula desde `fecha_inicio` (retroactivo permitido — debe su calendario completo).
+- **Día hábil:** el ajuste de fin de semana (`ajuste_dia_habil`) lo aplica **solo el comando** al generar; `proxima_generacion` guarda la fecha nominal.
+- **Vigencias:** `num_pagos` corta al llegar a N; `hasta_fecha` corta contra la fecha de pago ajustada; ambas marcan `activo=false`.
+- **Idempotencia:** índice único `egresos(egreso_recurrente_id, fecha)` + `exists()`; re-correr el comando no duplica.
+
+Detalle completo en `docs/sdd/03-egresos-recurrentes.md`.
+
 ## Referencias
 
 - `app/Services/Reconciliation/MatcherService.php`

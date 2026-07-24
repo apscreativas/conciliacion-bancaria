@@ -57,7 +57,6 @@ class EgresoRecurrenteController extends Controller
             'proxima_generacion' => $calc->firstOccurrence(
                 Carbon::parse($data['fecha_inicio']),
                 (int) $data['dia_del_mes'],
-                $data['frecuencia'],
             )->toDateString(),
         ]);
 
@@ -86,17 +85,17 @@ class EgresoRecurrenteController extends Controller
         $reactivando = ! $recurringExpense->activo && $data['activo'];
 
         if ($recurringExpense->pagos_generados === 0) {
-            // Aún no genera nada: recalcular la próxima generación según el nuevo schedule.
+            // Aún no genera nada: recalcular desde fecha_inicio (retroactivo permitido —
+            // una plantilla sin pagos debe su calendario completo, incluido el mes de inicio).
             $data['proxima_generacion'] = $calc->firstOccurrence(
                 Carbon::parse($data['fecha_inicio']),
                 (int) $data['dia_del_mes'],
-                $data['frecuencia'],
             )->toDateString();
         } elseif ($reactivando) {
             // Reactivar una plantilla con historial: reanudar desde HOY, no desde su
             // proxima_generacion vencida, para no disparar una avalancha de egresos retroactivos.
             $anchor = Carbon::parse($data['fecha_inicio'])->max(Carbon::today());
-            $data['proxima_generacion'] = $calc->firstOccurrence(
+            $data['proxima_generacion'] = $calc->onOrAfter(
                 $anchor,
                 (int) $data['dia_del_mes'],
                 $data['frecuencia'],

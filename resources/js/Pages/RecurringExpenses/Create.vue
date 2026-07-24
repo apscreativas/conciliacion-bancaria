@@ -6,6 +6,7 @@ import SecondaryButton from "@/Components/SecondaryButton.vue";
 import InputLabel from "@/Components/InputLabel.vue";
 import TextInput from "@/Components/TextInput.vue";
 import InputError from "@/Components/InputError.vue";
+import { formatDate } from "@/utils/format";
 import { computed } from "vue";
 
 interface Option {
@@ -66,6 +67,17 @@ const form = useForm({
     fecha_fin: props.plantilla?.fecha_fin?.slice(0, 10) ?? "",
     num_pagos: props.plantilla?.num_pagos ?? "",
     activo: props.plantilla?.activo ?? true,
+});
+
+// Espejo de RecurrenceCalculator::firstOccurrence — día del mes de fecha_inicio,
+// recortado al último día si el mes es más corto. Solo informativo (el backend decide).
+const primerEgreso = computed<string | null>(() => {
+    if (isEdit.value || !form.fecha_inicio) return null;
+    const [y, m] = form.fecha_inicio.split("-").map(Number);
+    const dia = Number(form.dia_del_mes);
+    if (!y || !m || !dia || dia < 1) return null;
+    const d = Math.min(dia, new Date(y, m, 0).getDate());
+    return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
 });
 
 const submit = () => {
@@ -163,6 +175,11 @@ const submit = () => {
                                     <InputError class="mt-2" :message="form.errors.fecha_inicio" />
                                 </div>
                             </div>
+
+                            <p v-if="primerEgreso" class="text-sm text-gray-500 dark:text-gray-400">
+                                {{ $t("Primer egreso") }}: {{ formatDate(primerEgreso) }}
+                                <span v-if="form.ajuste_dia_habil !== 'ninguno'">({{ $t("puede ajustarse a día hábil") }})</span>
+                            </p>
 
                             <div>
                                 <InputLabel for="vigencia_tipo" :value="$t('Vigencia')" />

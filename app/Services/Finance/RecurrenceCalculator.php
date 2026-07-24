@@ -19,13 +19,24 @@ class RecurrenceCalculator
     ];
 
     /**
-     * Primera fecha programada (en `dia` del mes) que cae en o después de `fecha_inicio`.
+     * Primera fecha programada: día `dia` del mes de `fecha_inicio` (clamp a fin de mes).
+     * Puede ser ANTERIOR a `fecha_inicio` — decisión de negocio: el mes de inicio siempre
+     * genera su egreso, aunque la plantilla se capture después del día de pago.
      */
-    public function firstOccurrence(Carbon $inicio, int $dia, string $frecuencia): Carbon
+    public function firstOccurrence(Carbon $inicio, int $dia): Carbon
     {
-        $candidate = $this->withDay($inicio, $dia);
+        return $this->withDay($inicio, $dia);
+    }
 
-        if ($candidate->lt($inicio->copy()->startOfDay())) {
+    /**
+     * Primera fecha programada (en `dia` del mes) que cae en o después de `anchor`.
+     * Usada al reactivar una plantilla con historial: reanuda sin egresos retroactivos.
+     */
+    public function onOrAfter(Carbon $anchor, int $dia, string $frecuencia): Carbon
+    {
+        $candidate = $this->withDay($anchor, $dia);
+
+        if ($candidate->lt($anchor->copy()->startOfDay())) {
             $candidate = $this->nextDate($candidate, $frecuencia, $dia);
         }
 
